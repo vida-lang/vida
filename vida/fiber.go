@@ -9,7 +9,7 @@ import (
 
 // fiberPool
 var fiberPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		fiber, _ := FiberNew(Closure{})
 		return fiber.(*Fiber)
 	},

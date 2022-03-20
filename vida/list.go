@@ -776,7 +776,7 @@ func lessThan(list *List) (err error) {
 	case Int:
 		sort.Slice(list.Elements, func(i, j int) bool {
 			if lhs, ok := list.Elements[i].(Int); ok {
-				if rhs, againOk := list.Elements[j].(Int); againOk {
+				if rhs, ok := list.Elements[j].(Int); ok {
 					return lhs < rhs
 				}
 			}
@@ -785,7 +785,7 @@ func lessThan(list *List) (err error) {
 	case UInt:
 		sort.Slice(list.Elements, func(i, j int) bool {
 			if lhs, ok := list.Elements[i].(UInt); ok {
-				if rhs, againOk := list.Elements[j].(UInt); againOk {
+				if rhs, ok := list.Elements[j].(UInt); ok {
 					return lhs < rhs
 				}
 			}
@@ -794,7 +794,7 @@ func lessThan(list *List) (err error) {
 	case Float:
 		sort.Slice(list.Elements, func(i, j int) bool {
 			if lhs, ok := list.Elements[i].(Float); ok {
-				if rhs, againOk := list.Elements[j].(Float); againOk {
+				if rhs, ok := list.Elements[j].(Float); ok {
 					return lhs < rhs
 				}
 			}
@@ -803,7 +803,7 @@ func lessThan(list *List) (err error) {
 	case *String:
 		sort.Slice(list.Elements, func(i, j int) bool {
 			if lhs, ok := list.Elements[i].(*String); ok {
-				if rhs, againOk := list.Elements[j].(*String); againOk {
+				if rhs, ok := list.Elements[j].(*String); ok {
 					return lhs.Value < rhs.Value
 				}
 			}
@@ -812,7 +812,7 @@ func lessThan(list *List) (err error) {
 	case *BInt:
 		sort.Slice(list.Elements, func(i, j int) bool {
 			if lhs, ok := list.Elements[i].(*BInt); ok {
-				if rhs, againOk := list.Elements[j].(*BInt); againOk {
+				if rhs, ok := list.Elements[j].(*BInt); ok {
 					return lhs.Value.Cmp(rhs.Value) == -1
 				}
 			}
@@ -821,7 +821,7 @@ func lessThan(list *List) (err error) {
 	case *Rational:
 		sort.Slice(list.Elements, func(i, j int) bool {
 			if lhs, ok := list.Elements[i].(*Rational); ok {
-				if rhs, againOk := list.Elements[j].(*Rational); againOk {
+				if rhs, ok := list.Elements[j].(*Rational); ok {
 					return lhs.Value.Cmp(rhs.Value) == -1
 				}
 			}
@@ -830,7 +830,7 @@ func lessThan(list *List) (err error) {
 	case *List:
 		sort.Slice(list.Elements, func(i, j int) bool {
 			if lhs, ok := list.Elements[i].(*List); ok {
-				if rhs, againOk := list.Elements[j].(*List); againOk {
+				if rhs, ok := list.Elements[j].(*List); ok {
 					return len(lhs.Elements) < len(rhs.Elements)
 				}
 			}
@@ -839,7 +839,7 @@ func lessThan(list *List) (err error) {
 	case Map:
 		sort.Slice(list.Elements, func(i, j int) bool {
 			if lhs, ok := list.Elements[i].(Map); ok {
-				if rhs, againOk := list.Elements[j].(Map); againOk {
+				if rhs, ok := list.Elements[j].(Map); ok {
 					return len(lhs) < len(rhs)
 				}
 			}
@@ -848,7 +848,7 @@ func lessThan(list *List) (err error) {
 	case Set:
 		sort.Slice(list.Elements, func(i, j int) bool {
 			if lhs, ok := list.Elements[i].(Set); ok {
-				if rhs, againOk := list.Elements[j].(Set); againOk {
+				if rhs, ok := list.Elements[j].(Set); ok {
 					return len(lhs) < len(rhs)
 				}
 			}
@@ -857,7 +857,7 @@ func lessThan(list *List) (err error) {
 	case Bool:
 		sort.Slice(list.Elements, func(i, j int) bool {
 			if lhs, ok := list.Elements[i].(Bool); ok {
-				if rhs, againOk := list.Elements[j].(Bool); againOk {
+				if rhs, ok := list.Elements[j].(Bool); ok {
 					if !lhs && rhs {
 						return true
 					}
@@ -876,7 +876,7 @@ func greaterThan(list *List) (err error) {
 	case Int:
 		sort.Slice(list.Elements, func(i, j int) bool {
 			if lhs, ok := list.Elements[i].(Int); ok {
-				if rhs, againOk := list.Elements[j].(Int); againOk {
+				if rhs, ok := list.Elements[j].(Int); ok {
 					return lhs > rhs
 				}
 			}
@@ -885,7 +885,7 @@ func greaterThan(list *List) (err error) {
 	case UInt:
 		sort.Slice(list.Elements, func(i, j int) bool {
 			if lhs, ok := list.Elements[i].(UInt); ok {
-				if rhs, againOk := list.Elements[j].(UInt); againOk {
+				if rhs, ok := list.Elements[j].(UInt); ok {
 					return lhs > rhs
 				}
 			}
@@ -894,7 +894,7 @@ func greaterThan(list *List) (err error) {
 	case Float:
 		sort.Slice(list.Elements, func(i, j int) bool {
 			if lhs, ok := list.Elements[i].(Float); ok {
-				if rhs, againOk := list.Elements[j].(Float); againOk {
+				if rhs, ok := list.Elements[j].(Float); ok {
 					return lhs > rhs
 				}
 			}
@@ -903,7 +903,7 @@ func greaterThan(list *List) (err error) {
 	case *String:
 		sort.Slice(list.Elements, func(i, j int) bool {
 			if lhs, ok := list.Elements[i].(*String); ok {
-				if rhs, againOk := list.Elements[j].(*String); againOk {
+				if rhs, ok := list.Elements[j].(*String); ok {
 					return lhs.Value > rhs.Value
 				}
 			}
@@ -912,7 +912,7 @@ func greaterThan(list *List) (err error) {
 	case *BInt:
 		sort.Slice(list.Elements, func(i, j int) bool {
 			if lhs, ok := list.Elements[i].(*BInt); ok {
-				if rhs, againOk := list.Elements[j].(*BInt); againOk {
+				if rhs, ok := list.Elements[j].(*BInt); ok {
 					return lhs.Value.Cmp(rhs.Value) == 1
 				}
 			}
@@ -921,7 +921,7 @@ func greaterThan(list *List) (err error) {
 	case *Rational:
 		sort.Slice(list.Elements, func(i, j int) bool {
 			if lhs, ok := list.Elements[i].(*Rational); ok {
-				if rhs, againOk := list.Elements[j].(*Rational); againOk {
+				if rhs, ok := list.Elements[j].(*Rational); ok {
 					return lhs.Value.Cmp(rhs.Value) == 1
 				}
 			}
@@ -930,7 +930,7 @@ func greaterThan(list *List) (err error) {
 	case *List:
 		sort.Slice(list.Elements, func(i, j int) bool {
 			if lhs, ok := list.Elements[i].(*List); ok {
-				if rhs, againOk := list.Elements[j].(*List); againOk {
+				if rhs, ok := list.Elements[j].(*List); ok {
 					return len(lhs.Elements) > len(rhs.Elements)
 				}
 			}
@@ -939,7 +939,7 @@ func greaterThan(list *List) (err error) {
 	case Map:
 		sort.Slice(list.Elements, func(i, j int) bool {
 			if lhs, ok := list.Elements[i].(Map); ok {
-				if rhs, againOk := list.Elements[j].(Map); againOk {
+				if rhs, ok := list.Elements[j].(Map); ok {
 					return len(lhs) > len(rhs)
 				}
 			}
@@ -948,7 +948,7 @@ func greaterThan(list *List) (err error) {
 	case Set:
 		sort.Slice(list.Elements, func(i, j int) bool {
 			if lhs, ok := list.Elements[i].(Set); ok {
-				if rhs, againOk := list.Elements[j].(Set); againOk {
+				if rhs, ok := list.Elements[j].(Set); ok {
 					return len(lhs) > len(rhs)
 				}
 			}
@@ -957,7 +957,7 @@ func greaterThan(list *List) (err error) {
 	case Bool:
 		sort.Slice(list.Elements, func(i, j int) bool {
 			if lhs, ok := list.Elements[i].(Bool); ok {
-				if rhs, againOk := list.Elements[j].(Bool); againOk {
+				if rhs, ok := list.Elements[j].(Bool); ok {
 					if lhs && !rhs {
 						return true
 					}
