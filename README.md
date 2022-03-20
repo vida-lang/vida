@@ -1,6 +1,6 @@
-### Hi there 👋
-Setting up everything ...
-The language will be soon published!
+### Vida
+A general-purpose programming language.
+Documentation in progress ...
 
 <!--
 **vida-lang/vida-lang** is a ✨ _special_ ✨ repository because its `README.md` (this file) appears on your GitHub profile.
