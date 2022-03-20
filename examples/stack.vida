@@ -1,0 +1,76 @@
+//
+// stack.vida
+// Mdoule stack
+// Implemtation of the Stack ADT.
+// Implemtation of the Stack Iterator.
+//
+
+
+// StackIterator
+struct StackIterator {
+    index endIndex data
+    fun new data {
+        return StackIterator(index:0, endIndex:data.length(), data:data)
+    }
+    fun __next self {
+        if self.index < self.endIndex {
+            let value = self.data[self.index]
+            self.index += 1
+            return value
+        }
+        return Iter.stop
+    }
+}
+
+
+// Stack
+struct Stack {
+    data
+    fun newFrom other {
+        return Stack(data:other.data.clone())
+    }
+    fun push self value {
+        self.data.append(value)
+    }
+    fun pop self {
+        if self.data.isEmpty() {
+            return Error("Pop from empty stack")
+        }
+        return Ok(self.data.popLast())
+    }
+    fun peek self {
+        if self.data.isEmpty() {
+            return Error("Peek from empty stack")
+        }
+        return Ok(self.data[-1])
+    }
+    fun length self {
+        return self.data.length()
+    }
+    fun isEmpty self {
+        return self.data.isEmpty()
+    }
+    fun makeIterator self {
+        return StackIterator.new(self.data.clone())
+    }
+    fun show self {
+        print("Stack ", self.data)
+    }
+}
+
+// Client interface.
+// Creates a new Stack
+fun new {
+    return Stack(data:[])
+}
+
+// Creates a new stack from other one.
+fun newFrom stack {
+    return Stack.newFrom(stack)
+}
+
+
+
+
+
+

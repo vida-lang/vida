@@ -1,0 +1,76 @@
+// 
+// Module:
+// gcd.vida
+// Description:
+// Module with different common mathematical functions.
+//
+
+
+
+// Recursive implementation of the greatest common divisor algorithm.
+// The algorithm assumes that arguments p and q are of the same type.
+fun euclid p q {
+    if q == toSameTypeOf(q, 0) {
+        return p
+    }
+    return euclid(q, p mod q)
+}
+
+
+// Function absolute value.
+// It is polymorphic.
+fun abs x {
+    if x < toSameTypeOf(x, 0) {
+        return -x
+    }
+    return x
+}
+
+
+// This function requires N is Int.
+fun isPrime N {
+    assert(typeof(N) == "Int", "The function isPrime requires a value of type Int")
+    if N < 2 {
+        return false
+    }
+    #primeTest
+    for i in range 2, N {
+        if i * i > N {
+            break #primeTest
+        } else if N mod i == 0 {
+            return false
+        }
+    }
+    return true
+}
+
+
+// This function requires x is a Float and x >= 0.0.
+fun sqrt x {
+    assert(typeof(x) == "Float" and x >= 0.0, "The function sqrt requires a positive Float")
+    let err, t = 1e-15, x
+    for abs(t - x / t) > err * t {
+        t = (x / t + t) / 2.0
+    }
+    return t
+}
+
+
+// This function has the same requirements of sqrt for both arguments.
+fun hypotenuse a b {
+    return sqrt(a * a + b * b)
+}
+
+
+// This function requires an Int as argument. 
+fun harmonic x {
+    assert(typeof(x) == "Int", "The function harmonic requieres an Integer as argument")
+    let sum = 0.0
+    for i in range 1, x + 1 {
+        sum += 1.0 / Float(i)
+    }
+    return sum
+}
+
+
+

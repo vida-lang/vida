@@ -1,0 +1,31 @@
+// Info: https://github.com/atemerev/skynet
+
+
+fun skynet num size div {
+    return Fiber.new(fun {
+        if size == 1 {
+            Fiber.suspend(num)
+        } else {
+            let tasks = []
+            for i in range 0, div {
+                let resultDiv = size / div
+                let subNum = num + i * resultDiv
+                tasks.append(skynet(subNum, resultDiv, div))
+            }
+            let sum = 0
+            for task in tasks {
+                sum += task.run()
+            }
+            Fiber.suspend(sum)
+        }
+    })
+}
+
+let result = skynet(0, 1_000_000, 10).run()
+print(result)
+assert(result == 499_999_500_000, "Skynet Failure")
+
+
+
+
+
