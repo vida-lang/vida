@@ -5,7 +5,7 @@ import (
 	"math"
 	"math/cmplx"
 
-	"github.com/vida-lang/vida-lang/vida"
+	"github.com/vida-lang/vida/vida"
 )
 
 // loadMath loads the stdlib for mathematical computations over Floats.

@@ -1,2 +1,14 @@
 
-print("Hello, Vida!")
+fun euler limit {
+    let sum = 0
+    for i in range limit {
+        if i mod 3 == 0 {
+            sum += i
+        }
+    }
+    return sum
+}
+
+
+print(euler(10_000_000))
+

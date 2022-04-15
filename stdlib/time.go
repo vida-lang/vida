@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/vida-lang/vida-lang/vida"
+	"github.com/vida-lang/vida/vida"
 )
 
 // Durations models Go's Duration type derived from int64

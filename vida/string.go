@@ -183,13 +183,13 @@ func (s *String) SliceGet(sliceType UInt32, low, high Value) (Value, error) {
 	var l, h Int
 	length := Int(len(s.Runes))
 	switch sliceType {
-	case ExprColon:
+	case exprColon:
 		l, h = lidx.ToInt(), length
-	case ColonExpr:
+	case colonExpr:
 		h = hidx.ToInt()
-	case ExprColonExpr:
+	case exprColonExpr:
 		l, h = lidx.ToInt(), hidx.ToInt()
-	case OnlyColon:
+	case onlyColon:
 		h = length
 	default:
 		return nil, NeverShouldHaveHappened("wrong sliceType in String SliceGet")

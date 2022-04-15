@@ -3,7 +3,7 @@ package stdlib
 import (
 	"fmt"
 
-	"github.com/vida-lang/vida-lang/vida"
+	"github.com/vida-lang/vida/vida"
 )
 
 func loadFmt() vida.Importable {

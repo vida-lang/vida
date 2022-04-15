@@ -9,15 +9,14 @@ import (
 )
 
 const (
-	ModuleExtension    = ".vida"
-	CompiledExtension  = ".vo"
-	AssemblerExtension = ".vi"
-	LanguageVersion    = "0.7.0"
-	VMEngineVersion    = "0.5.0"
-	STDLibVersion      = "0.3.0"
-	LangName           = "Vida 🌻"
-	LangHeader         = "A general-purpose programming language."
-	LangWebSite        = "https://www.vida-lang.org"
+	ModuleExtension         = ".vida"
+	ModuleCompiledExtension = ".vo"
+	LangVersion             = "0.7.0"
+	VMEngineVersion         = "0.5.0"
+	STDLibVersion           = "0.3.0"
+	LangName                = "Vida 🌻"
+	LangHeader              = "A general-purpose programming language."
+	LangWebSite             = "https://www.vida-lang.org"
 )
 
 // LoadModule loads a script file and returns a buffer of bytes.
@@ -34,18 +33,16 @@ func LoadModule(moduleName string) (*bytes.Buffer, error) {
 // RunModule runs the given Vida Script
 func RunModule(input *bytes.Buffer, script string, stdlib map[string]LibLoader) {
 	input.WriteRune(10)
-	vm := VM{MainFiber(script, BuildModule(input, script))}
-	globalState.vm = &vm
-	globalState.stdlib = stdlib
+	vm := VM{mainFiber(script, buildModule(input, script))}
+	globalState.vm, globalState.stdlib = &vm, stdlib
 	vm.Run(mainFunctionName)
 }
 
 // DebugModule runs the given Vida script in step by step computation fashion.
 func DebugModule(input *bytes.Buffer, script string, stdlib map[string]LibLoader) {
 	input.WriteRune(10)
-	vm := VM{debugFiber(script, BuildModule(input, script))}
-	globalState.vm = &vm
-	globalState.stdlib = stdlib
+	vm := VM{debugFiber(script, buildModule(input, script))}
+	globalState.vm, globalState.stdlib = &vm, stdlib
 	vm.RunDebugger(mainFunctionName)
 }
 
@@ -53,7 +50,7 @@ func DebugModule(input *bytes.Buffer, script string, stdlib map[string]LibLoader
 func TimeModule(input *bytes.Buffer, script string, stdlib map[string]LibLoader) {
 	input.WriteRune(10)
 	init := time.Now()
-	vm := VM{MainFiber(script, BuildModule(input, script))}
+	vm := VM{mainFiber(script, buildModule(input, script))}
 	frontendTime := time.Since(init)
 	globalState.vm, globalState.stdlib = &vm, stdlib
 	init = time.Now()
@@ -68,7 +65,7 @@ func TimeModule(input *bytes.Buffer, script string, stdlib map[string]LibLoader)
 // PrintCode prints the machine code in human readable fashion.
 func PrintCode(input *bytes.Buffer, script string) {
 	input.WriteRune(10)
-	vm := VM{MainFiber(script, BuildModule(input, script))}
+	vm := VM{mainFiber(script, buildModule(input, script))}
 	fmt.Printf("\n _____________________________________\n")
 	fmt.Printf("\n\n     Human Readable Machine Code\n")
 	fmt.Printf("\n _____________________________________\n")
@@ -80,7 +77,7 @@ func PrintCode(input *bytes.Buffer, script string) {
 func (fiber *Fiber) loadVida() {
 	modName := "Vida"
 	module := GModule{Name: modName, Namespace: make(Namespace)}
-	module.Namespace["version"] = &String{Value: LangName + " version " + LanguageVersion}
+	module.Namespace["version"] = &String{Value: LangName + " version " + LangVersion}
 	module.Namespace["vmVersion"] = &String{Value: "Vida VMEngine version " + VMEngineVersion}
 	module.Namespace["fext"] = &String{Value: "Vida file extension " + ModuleExtension}
 	module.Namespace["header"] = &String{Value: LangHeader}

@@ -141,7 +141,7 @@ func (vm *VM) runStepByStep(fiberFunctionName string) error {
 					// |- OpCode -|- index -|- isLocal -|
 					freeVarInstr := vm.frame.closure.Function.Code[vm.frame.pc]
 					if freeVarInstr>>upperShift == 1 {
-						closure.FreeVars = append(closure.FreeVars, FreeVar{Value: vm.stack[vm.frame.fp+(freeVarInstr>>instructionShift&operandMask)]})
+						closure.FreeVars = append(closure.FreeVars, vm.stack[vm.frame.fp+(freeVarInstr>>instructionShift&operandMask)])
 					} else {
 						closure.FreeVars = append(closure.FreeVars, vm.frame.closure.FreeVars[freeVarInstr>>instructionShift&operandMask])
 					}
@@ -256,7 +256,7 @@ func (vm *VM) runStepByStep(fiberFunctionName string) error {
 			// ColonExpr = [:e]
 			// OnlyColon = [:]
 			switch operand {
-			case OnlyExpression:
+			case onlyExpression:
 				dataStrucIndex := vm.top - 2
 				switch dataStruct := vm.stack[dataStrucIndex].(type) {
 				case SubscriptOperable:
@@ -269,7 +269,7 @@ func (vm *VM) runStepByStep(fiberFunctionName string) error {
 				default:
 					return ValueDoesNotSupportSubscription(dataStruct)
 				}
-			case ExprColon:
+			case exprColon:
 				dsIndex, low := vm.top-2, vm.stack[vm.top-1]
 				switch dataStructure := vm.stack[dsIndex].(type) {
 				case SliceOperable:
@@ -282,7 +282,7 @@ func (vm *VM) runStepByStep(fiberFunctionName string) error {
 				default:
 					return ValueDoesNotSupportSlicing(dataStructure)
 				}
-			case ColonExpr:
+			case colonExpr:
 				dsIndex, high := vm.top-2, vm.stack[vm.top-1]
 				switch dataStructure := vm.stack[dsIndex].(type) {
 				case SliceOperable:
@@ -295,7 +295,7 @@ func (vm *VM) runStepByStep(fiberFunctionName string) error {
 				default:
 					return ValueDoesNotSupportSlicing(dataStructure)
 				}
-			case ExprColonExpr:
+			case exprColonExpr:
 				dsIndex, low, high := vm.top-3, vm.stack[vm.top-2], vm.stack[vm.top-1]
 				switch dataStructure := vm.stack[dsIndex].(type) {
 				case SliceOperable:
@@ -308,7 +308,7 @@ func (vm *VM) runStepByStep(fiberFunctionName string) error {
 				default:
 					return ValueDoesNotSupportSlicing(dataStructure)
 				}
-			case OnlyColon:
+			case onlyColon:
 				dsIndex := vm.top - 1
 				switch dataStructure := vm.stack[dsIndex].(type) {
 				case SliceOperable:
@@ -476,11 +476,11 @@ func (vm *VM) runStepByStep(fiberFunctionName string) error {
 			flag &= mask
 			var err error
 			switch flag {
-			case OnlyExpression:
+			case onlyExpression:
 				vm.top--
 				indexIndex, value := vm.top-(operand+1), vm.stack[vm.top]
 				dataStructIndex, index := indexIndex-1, vm.stack[indexIndex]
-				if mutatingOperatorType == MutatingOperatorSubscript {
+				if mutatingOperatorType == mutatingOperatorSubscript {
 					switch ds := vm.stack[dataStructIndex].(type) {
 					case SubscriptOperable:
 						if err = ds.SubscriptSet(index, value); err != nil {
@@ -508,7 +508,7 @@ func (vm *VM) runStepByStep(fiberFunctionName string) error {
 					}
 					vm.top = dataStructIndex
 				}
-			case ExprColon:
+			case exprColon:
 				vm.top--
 				index, value := vm.top-(operand+1), vm.stack[vm.top]
 				dataStructIndex := index - 1
@@ -529,7 +529,7 @@ func (vm *VM) runStepByStep(fiberFunctionName string) error {
 					}
 					vm.top = dataStructIndex
 				}
-			case ColonExpr:
+			case colonExpr:
 				vm.top--
 				index, value := vm.top-(operand+1), vm.stack[vm.top]
 				dataStructIndex := index - 1
@@ -550,7 +550,7 @@ func (vm *VM) runStepByStep(fiberFunctionName string) error {
 					}
 					vm.top = dataStructIndex
 				}
-			case ExprColonExpr:
+			case exprColonExpr:
 				vm.top--
 				upperBound, value := vm.top-(operand+1), vm.stack[vm.top]
 				lowerBound := upperBound - 1
@@ -574,7 +574,7 @@ func (vm *VM) runStepByStep(fiberFunctionName string) error {
 					}
 					vm.top = dataStructIndex
 				}
-			case OnlyColon:
+			case onlyColon:
 				vm.top--
 				dataStructIndex, value := vm.top-(operand+1), vm.stack[vm.top]
 				switch ds := vm.stack[dataStructIndex].(type) {
@@ -615,12 +615,12 @@ func (vm *VM) runStepByStep(fiberFunctionName string) error {
 			var err error
 			var value Value
 			switch flag {
-			case OnlyExpression:
+			case onlyExpression:
 				index := (vm.top - 1) - (relativeIndex + 1)
 				dataStructureIndex := index - 1
 				dataStructure := vm.stack[dataStructureIndex]
 				vm.stack[vm.top] = vm.stack[vm.top-1]
-				if selectorOperator == MutatingOperatorSubscript {
+				if selectorOperator == mutatingOperatorSubscript {
 					switch dataStruct := vm.stack[dataStructureIndex].(type) {
 					case SubscriptOperable:
 						if value, err = dataStruct.SubscriptGet(vm.stack[index]); err == nil {
@@ -653,7 +653,7 @@ func (vm *VM) runStepByStep(fiberFunctionName string) error {
 						vm.top--
 						vm.stack[vm.top-1] = value
 						///---------- Mutate ds
-						if selectorOperator == MutatingOperatorSubscript {
+						if selectorOperator == mutatingOperatorSubscript {
 							switch ds := dataStructure.(type) {
 							case SubscriptOperable:
 								if err = ds.SubscriptSet(vm.stack[index], value); err != nil {
@@ -685,7 +685,7 @@ func (vm *VM) runStepByStep(fiberFunctionName string) error {
 						return err
 					}
 				}
-			case ExprColon:
+			case exprColon:
 				low := (vm.top - 1) - (relativeIndex + 1)
 				dataStructureIndex := low - 1
 				vm.top--
@@ -714,7 +714,7 @@ func (vm *VM) runStepByStep(fiberFunctionName string) error {
 					}
 					vm.top = dataStructureIndex
 				}
-			case ColonExpr:
+			case colonExpr:
 				high := (vm.top - 1) - (relativeIndex + 1)
 				dataStructureIndex := high - 1
 				vm.top--
@@ -743,7 +743,7 @@ func (vm *VM) runStepByStep(fiberFunctionName string) error {
 					}
 					vm.top = dataStructureIndex
 				}
-			case ExprColonExpr:
+			case exprColonExpr:
 				high := (vm.top - 1) - (relativeIndex + 1)
 				low := high - 1
 				dataStructureIndex := low - 1
@@ -778,7 +778,7 @@ func (vm *VM) runStepByStep(fiberFunctionName string) error {
 					}
 					vm.top = dataStructureIndex
 				}
-			case OnlyColon:
+			case onlyColon:
 				dataStructureIndex := (vm.top - 1) - (relativeIndex + 1)
 				vm.top--
 				value = vm.stack[vm.top]
@@ -806,20 +806,20 @@ func (vm *VM) runStepByStep(fiberFunctionName string) error {
 			}
 		case OPGetFreeVariable:
 			// |- Local Index -|- OpCode -|
-			vm.stack[vm.top] = vm.frame.closure.FreeVars[operand].Value
+			vm.stack[vm.top] = vm.frame.closure.FreeVars[operand]
 			vm.top++
 		case OPSetFreeVariable:
 			// |- FreeVar Index -|- OpCode -|
 			vm.top--
-			vm.frame.closure.FreeVars[operand].Value = vm.stack[vm.top]
+			vm.frame.closure.FreeVars[operand] = vm.stack[vm.top]
 		case OPCompSetFreeVariable:
 			// |- OpCode -|- Relative Index -|- operator -|
 			freeVarIndex, operator := operand&operandMask, instruction>>upperShift
-			vm.stack[vm.top], vm.stack[vm.top-1] = vm.stack[vm.top-1], vm.frame.closure.FreeVars[freeVarIndex].Value
+			vm.stack[vm.top], vm.stack[vm.top-1] = vm.stack[vm.top-1], vm.frame.closure.FreeVars[freeVarIndex]
 			vm.top++
 			if value, err := vm.stack[vm.top-2].BinaryOp(byte(operator), vm.stack[vm.top-1]); err == nil {
 				vm.top -= 2
-				vm.frame.closure.FreeVars[freeVarIndex].Value = value
+				vm.frame.closure.FreeVars[freeVarIndex] = value
 			} else {
 				return err
 			}
@@ -1426,33 +1426,33 @@ func (vm *VM) runStepByStep(fiberFunctionName string) error {
 		case OPDefer:
 			// |- ArgCount -|- OpCode -|
 			fnIndex := vm.top - operand - 1
-			var deferInfo DeferInfo
+			var df deferInfo
 			switch callable := vm.stack[fnIndex].(type) {
 			case Closure:
-				deferInfo = DeferInfo{callable: callable, typeofCallable: typeFunction}
+				df = deferInfo{callable: callable, typeofCallable: typeFunction}
 			case GFunction:
-				deferInfo = DeferInfo{callable: callable, typeofCallable: typeGFunction}
+				df = deferInfo{callable: callable, typeofCallable: typeGFunction}
 			case Struct:
-				deferInfo = DeferInfo{callable: callable, typeofCallable: typeStruct}
+				df = deferInfo{callable: callable, typeofCallable: typeStruct}
 			case Instance:
-				deferInfo = DeferInfo{callable: callable, typeofCallable: typeInstance}
+				df = deferInfo{callable: callable, typeofCallable: typeInstance}
 			default:
 				return ExpectedCallableValueInDeferError(vm.stack[fnIndex])
 			}
 			offset := operand
 			for i := Bytecode(0); i < operand; i++ {
-				deferInfo.args = append(deferInfo.args, vm.stack[vm.top-offset])
+				df.args = append(df.args, vm.stack[vm.top-offset])
 				offset--
 			}
 			vm.top = fnIndex
-			deferInfo.line = vm.frame.closure.Function.Lines[vm.frame.pc-1]
-			vm.frame.deferStack = append(vm.frame.deferStack, deferInfo)
+			df.line = vm.frame.closure.Function.Lines[vm.frame.pc-1]
+			vm.frame.deferStack = append(vm.frame.deferStack, df)
 			vm.frame.hasDefer = true
 		case OPDeferInvoke:
 			// |- ArgCount -|- OpCode -|
 			attributeIndex := vm.top - (operand + 1)
 			objectIndex := attributeIndex - 1
-			deferInfo := DeferInfo{attribute: vm.stack[attributeIndex].(*String).Value, object: vm.stack[objectIndex], typeofCallable: typeInvoke}
+			deferInfo := deferInfo{attribute: vm.stack[attributeIndex].(*String).Value, object: vm.stack[objectIndex], typeofCallable: typeInvoke}
 			offset := operand
 			for i := Bytecode(0); i < operand; i++ {
 				deferInfo.args = append(deferInfo.args, vm.stack[vm.top-offset])

@@ -105,11 +105,11 @@ func (fiber *Fiber) Clone() Value {
 }
 
 // mainFiber creates the main sequence of execution. It creates the shared global state and loads the corelib as well.
-func MainFiber(mainScriptName string, module *VModule) *Fiber {
-	globalState = Global{modules: make(map[string]*VModule), mainModuleName: mainScriptName}
-	globalState.modules[mainScriptName] = module
+func mainFiber(mainModuleName string, module *VModule) *Fiber {
+	globalState = Global{modules: make(map[string]*VModule), mainModuleName: mainModuleName}
+	globalState.modules[mainModuleName] = module
 	module.global = &globalState
-	cycleDetector[mainScriptName] = NilValue
+	cycleDetector[mainModuleName] = NilValue
 	mainFiber := &Fiber{stackFrame: make([]Frame, frameStackSize), stack: make([]Value, stackSize)}
 	mainFiber.frame = &mainFiber.stackFrame[mainFiber.frameIndex]
 	mainFiber.frame.closure = Closure{Function: module.mainFunction.Function}
@@ -117,16 +117,16 @@ func MainFiber(mainScriptName string, module *VModule) *Fiber {
 	mainFiber.state = fiberRunning
 	globalState.mainFiber = mainFiber
 	globalState.currentFiber = mainFiber
-	mainFiber.loadAll()
+	mainFiber.loadAllBuiltinFunctionality()
 	return mainFiber
 }
 
 // debugFiber creates a new sequence of execution, but with just 32 slots in its stack for debbugging purposes.
-func debugFiber(mainScriptName string, module *VModule) *Fiber {
-	globalState = Global{modules: make(map[string]*VModule), mainModuleName: mainScriptName}
-	globalState.modules[mainScriptName] = module
+func debugFiber(mainModuleName string, module *VModule) *Fiber {
+	globalState = Global{modules: make(map[string]*VModule), mainModuleName: mainModuleName}
+	globalState.modules[mainModuleName] = module
 	module.global = &globalState
-	cycleDetector[mainScriptName] = NilValue
+	cycleDetector[mainModuleName] = NilValue
 	debugFiber := &Fiber{stackFrame: make([]Frame, frameStackSize), stack: make([]Value, debugStackSize)}
 	debugFiber.frame = &debugFiber.stackFrame[debugFiber.frameIndex]
 	debugFiber.frame.closure = Closure{Function: module.mainFunction.Function}
@@ -134,8 +134,24 @@ func debugFiber(mainScriptName string, module *VModule) *Fiber {
 	debugFiber.state = fiberRunning
 	globalState.mainFiber = debugFiber
 	globalState.currentFiber = debugFiber
-	debugFiber.loadAll()
+	debugFiber.loadAllBuiltinFunctionality()
 	return debugFiber
+}
+
+func replFiber(moduleName string, module *VModule) *Fiber {
+	globalState = Global{modules: make(map[string]*VModule), mainModuleName: moduleName}
+	globalState.modules[moduleName] = module
+	module.global = &globalState
+	cycleDetector[moduleName] = NilValue
+	replFiber := &Fiber{stackFrame: make([]Frame, frameStackSize), stack: make([]Value, stackSize)}
+	replFiber.frame = &replFiber.stackFrame[replFiber.frameIndex]
+	replFiber.frame.closure = Closure{Function: module.mainFunction.Function}
+	replFiber.module = module
+	replFiber.state = fiberRunning
+	globalState.mainFiber = replFiber
+	globalState.currentFiber = replFiber
+	replFiber.loadAllBuiltinFunctionality()
+	return replFiber
 }
 
 // stackTrace prints the stack frames to show the source of an error.
@@ -167,7 +183,7 @@ func (fiber *Fiber) runPendingDeferStatements() *Fiber {
 	return fiber
 }
 
-func (fiber *Fiber) loadAll() {
+func (fiber *Fiber) loadAllBuiltinFunctionality() {
 	fiber.loadPrelude()
 	fiber.loadFiber()
 	fiber.loadRecord()

@@ -1,6 +1,6 @@
 package main
 
-import "github.com/vida-lang/vida-lang/cli"
+import "github.com/vida-lang/vida/cli"
 
 func main() {
 	cli.Vida()

@@ -10,7 +10,7 @@ import (
 )
 
 type assignmentHelper struct {
-	tokens           []Token
+	tokens           []token
 	expressionsCount int
 	isCollection     []bool
 	operatorType     map[int]byte
@@ -44,70 +44,70 @@ var loopHelper []loopInfo
 // This global variable is for lambda and anonumous functions count.
 var lambdaID = uint64(0)
 
-// Local models local variables.
-type Local struct {
+// localVariable models local variables.
+type localVariable struct {
 	identifier string
 	depth      Int32
 }
 
-// CompFreeVar represents a local or global value in some enclosing environment at compile time.
-type CompFreeVar struct {
+// freeVar represents a local or global value in some enclosing environment at compile time.
+type freeVar struct {
 	index   UInt32
 	isLocal bool
 }
 
-// ParseRule is the struct for parsing expressions.
-type ParseRule struct {
-	prefix     ParseFn
-	infix      ParseFn
+// parseRule is the struct for parsing expressions.
+type parseRule struct {
+	prefix     parseFn
+	infix      parseFn
 	precedence byte
 }
 
-// ParseFn is the generic function for parsing expressions.
-type ParseFn func(compiler *Compiler, precedence byte)
+// parseFn is the generic function for parsing expressions.
+type parseFn func(compiler *compiler, precedence byte)
 
 // Operator Precedences
 const (
-	PrecedenceNone           byte = iota
-	PrecedenceNilChoice           // ?
-	PrecedenceOr                  // or
-	PrecedenceAnd                 // and
-	PrecedenceEquality            // == !=
-	PrecedenceRelational          // > >= < <=
-	PrecedenceRange               // range
-	PrecedenceAdditive            // + -
-	PrecedenceMultiplicative      // * / mod %
-	PrecedenceBitOr               // |
-	PrecedenceBitXor              // ^
-	PrecedenceBitAnd              // &
-	PrecedenceShift               // << >>
-	PrecedenceUnary               // - not ~ try : Right to Left Associativiy
-	PrecedenceExp                 // ** Right to Left Associativiy
-	PrecedencePosfix              // [] . ()
-	PrecedencePrimary             //
+	precedenceNone           byte = iota
+	precedenceNilChoice           // ?
+	precedenceOr                  // or
+	precedenceAnd                 // and
+	precedenceEquality            // == !=
+	precedenceRelational          // > >= < <=
+	precedenceRange               // range
+	precedenceAdditive            // + -
+	precedenceMultiplicative      // * / mod %
+	precedenceBitOr               // |
+	precedenceBitXor              // ^
+	precedenceBitAnd              // &
+	precedenceShift               // << >>
+	precedenceUnary               // - not ~ try : Right to Left Associativiy
+	precedenceExp                 // ** Right to Left Associativiy
+	precedencePosfix              // [] . ()
+	precedencePrimary             //
 )
 
-// Compiler is the structure for saving partial state while performing syntax analysis and emitting machine code.
-type Compiler struct {
-	parent        *Compiler
-	lexer         *Lexer
-	token         Token
-	next          Token
-	rules         []ParseRule
+// compiler is the structure for saving partial state while performing syntax analysis and emitting machine code.
+type compiler struct {
+	parent        *compiler
+	lexer         *lexer
+	token         token
+	next          token
+	rules         []parseRule
 	function      Function
 	kIndex        Bytecode
 	gIndex        Bytecode
 	gIDPos        map[string]Bytecode
 	gID           []string
-	locals        []Local
+	locals        []localVariable
 	scopeDepth    Int32
-	freeVariables []CompFreeVar
+	freeVariables []freeVar
 	canAccess     bool
 	hasDefer      bool
 }
 
-func newCompiler(lexer *Lexer, rules []ParseRule) *Compiler {
-	return &Compiler{
+func newCompiler(lexer *lexer, rules []parseRule) *compiler {
+	return &compiler{
 		lexer:    lexer,
 		rules:    rules,
 		function: Function{Lines: make(map[Bytecode]UInt32), ModuleName: lexer.fileName},
@@ -115,8 +115,8 @@ func newCompiler(lexer *Lexer, rules []ParseRule) *Compiler {
 	}
 }
 
-func newChildCompiler(parent *Compiler) *Compiler {
-	return &Compiler{
+func newChildCompiler(parent *compiler) *compiler {
+	return &compiler{
 		parent:    parent,
 		lexer:     parent.lexer,
 		token:     parent.token,
@@ -130,7 +130,88 @@ func newChildCompiler(parent *Compiler) *Compiler {
 	}
 }
 
-func updateCompiler(parent, child *Compiler) {
+func newReplCompiler(moduleName string, buffer *bytes.Buffer) *compiler {
+	compiler := &compiler{
+		lexer:    newLexer(buffer, moduleName),
+		rules:    parseRules,
+		function: Function{Name: mainFunctionName, Lines: make(map[Bytecode]UInt32), ModuleName: moduleName},
+		gIDPos:   make(map[string]Bytecode),
+	}
+	return compiler
+}
+
+func (c *compiler) getFunctionPointer() *Function {
+	return &c.function
+}
+
+func (c *compiler) getIdentifiers() []string {
+	return c.gID
+}
+
+func compileCodeForRepl(compiler *compiler) {
+	for compiler.token.Type != tokEOF {
+		switch compiler.token.Type {
+		case tokLet:
+			compileDeclaration(compiler)
+		case tokIdentifier:
+			if compiler.next.Type == tokEquation || compiler.next.Type == tokComma {
+				compileAssignment(compiler)
+			} else {
+				compileREPLExpression(compiler)
+			}
+		case tokStruct:
+			compileStruct(compiler)
+		case tokFunction:
+			compileClosure(compiler)
+		case tokConst:
+			compileConstNamespace(compiler)
+		case tokExtension:
+			compileExtension(compiler)
+		case tokIf:
+			compileIf(compiler, false)
+		case tokFor:
+			compileFor(compiler)
+		case tokLabel:
+			switch compiler.next.Type {
+			case tokFor:
+				compileFor(compiler)
+			default:
+				compilerPrintError("Statement", compiler.next, compiler.lexer.fileName)
+			}
+		case tokSwitch:
+			compileSwitch(compiler, false)
+		case tokDefer:
+			compileDefer(compiler)
+		case tokLCurly:
+			compileBlock(compiler, false)
+		default:
+			compileREPLExpression(compiler)
+		}
+	}
+	emitEndScript(compiler, compiler.token.Line)
+}
+
+func compileREPLExpression(compiler *compiler) {
+	wildcard, printDesc := "_", "print"
+	compileExpression(compiler, precedenceNone)
+	forward(compiler)
+	pos, _ := compiler.gIDPos[wildcard]
+	emitSetGlobal(compiler, pos, compiler.lexer.line)
+	if ppos, exists := compiler.gIDPos[printDesc]; exists {
+		emitGetGlobal(compiler, ppos, compiler.lexer.line)
+	} else {
+		compiler.gIDPos[printDesc] = compiler.gIndex
+		compiler.gID = append(compiler.gID, printDesc)
+		emitGetGlobal(compiler, compiler.gIndex, compiler.lexer.line)
+		compiler.gIndex++
+	}
+	pos, _ = compiler.gIDPos[wildcard]
+	emitGetGlobal(compiler, pos, compiler.lexer.line)
+	emitCall(compiler, 1, 0, compiler.lexer.line)
+	emitPop(compiler, 1, compiler.lexer.line)
+}
+
+func updateCompiler(parent, child *compiler) {
 	parent.gIndex = child.gIndex
 	parent.gIDPos = child.gIDPos
 	parent.gID = child.gID
@@ -143,41 +224,41 @@ func updateCompiler(parent, child *Compiler) {
 }
 
 // BuildModule builds a module. A module is the code contained in one file.
-func BuildModule(input *bytes.Buffer, fileName string) *VModule {
+func buildModule(input *bytes.Buffer, fileName string) *VModule {
 	compiler := newCompiler(newLexer(input, fileName), parseRules)
 	compiler.function.Name = mainFunctionName
 	forward(compiler)
 	forward(compiler)
-	for compiler.token.Type != TKEof {
+	for compiler.token.Type != tokEOF {
 		switch compiler.token.Type {
-		case TKLet:
+		case tokLet:
 			compileDeclaration(compiler)
-		case TKIdentifier:
+		case tokIdentifier:
 			compileAssignment(compiler)
-		case TKStruct:
+		case tokStruct:
 			compileStruct(compiler)
-		case TKFunction:
+		case tokFunction:
 			compileClosure(compiler)
-		case TKConst:
+		case tokConst:
 			compileConstNamespace(compiler)
-		case TKExtension:
+		case tokExtension:
 			compileExtension(compiler)
-		case TKIf:
+		case tokIf:
 			compileIf(compiler, false)
-		case TKFor:
+		case tokFor:
 			compileFor(compiler)
-		case TKLabel:
+		case tokLabel:
 			switch compiler.next.Type {
-			case TKFor:
+			case tokFor:
 				compileFor(compiler)
 			default:
 				compilerPrintError("Statement", compiler.next, compiler.lexer.fileName)
 			}
-		case TKSwitch:
+		case tokSwitch:
 			compileSwitch(compiler, false)
-		case TKDefer:
+		case tokDefer:
 			compileDefer(compiler)
-		case TKLCurly:
+		case tokLCurly:
 			compileBlock(compiler, false)
 		default:
 			compilerPrintError("Statement", compiler.token, compiler.lexer.fileName)
@@ -189,29 +270,29 @@ func BuildModule(input *bytes.Buffer, fileName string) *VModule {
 }
 
 // This function compailes add local and global variable definitions.
-func compileDeclaration(compiler *Compiler) {
+func compileDeclaration(compiler *compiler) {
 	line := compiler.token.Line
-	check(compiler, TKLet)
+	check(compiler, tokLet)
 	forward(compiler)
 	assHelperOffset := len(assHelper)
 	assHelper = append(assHelper, assignmentHelper{})
-	check(compiler, TKIdentifier)
+	check(compiler, tokIdentifier)
 	assHelper[assHelperOffset].tokens = append(assHelper[assHelperOffset].tokens, compiler.token)
 	forward(compiler)
-	for compiler.token.Type == TKComma {
+	for compiler.token.Type == tokComma {
 		forward(compiler)
-		check(compiler, TKIdentifier)
+		check(compiler, tokIdentifier)
 		assHelper[assHelperOffset].tokens = append(assHelper[assHelperOffset].tokens, compiler.token)
 		forward(compiler)
 	}
-	check(compiler, TKEquation)
+	check(compiler, tokEquation)
 	forward(compiler)
-	compileExpression(compiler, PrecedenceNone)
+	compileExpression(compiler, precedenceNone)
 	forward(compiler)
 	assHelper[assHelperOffset].expressionsCount++
-	for compiler.token.Type == TKComma {
+	for compiler.token.Type == tokComma {
 		forward(compiler)
-		compileExpression(compiler, PrecedenceNone)
+		compileExpression(compiler, precedenceNone)
 		forward(compiler)
 		assHelper[assHelperOffset].expressionsCount++
 	}
@@ -241,14 +322,14 @@ func compileDeclaration(compiler *Compiler) {
 
 // Two helper functions for variable definition compilation.
 // Declare new locals
-func declareNewLocals(compiler *Compiler, assHelperOffset, tokensCount int) {
+func declareNewLocals(compiler *compiler, assHelperOffset, tokensCount int) {
 	for i := 0; i < tokensCount; i++ {
 		addLocal(compiler, assHelper[assHelperOffset].tokens[i])
 	}
 }
 
 // Declare new globals.
-func declareNewGlobals(compiler *Compiler, assHelperOffset, tokensCount int, line UInt32) {
+func declareNewGlobals(compiler *compiler, assHelperOffset, tokensCount int, line UInt32) {
 	for j := tokensCount - 1; j >= 0; j-- {
 		if pos, exists := compiler.gIDPos[assHelper[assHelperOffset].tokens[j].Description]; exists {
 			emitNewGlobal(compiler, pos, line)
@@ -262,14 +343,14 @@ func declareNewGlobals(compiler *Compiler, assHelperOffset, tokensCount int, lin
 }
 
 // This function compiles all global and local assignments.
-func compileAssignment(compiler *Compiler) {
+func compileAssignment(compiler *compiler) {
 	assHelperOffset := len(assHelper)
 	assHelper = append(assHelper, assignmentHelper{operatorType: map[int]byte{}, indexType: map[int]uint32{}})
-	check(compiler, TKIdentifier)
-	if compiler.next.Type == TKLBracket || compiler.next.Type == TKDot || compiler.next.Type == TKLParen {
+	check(compiler, tokIdentifier)
+	if compiler.next.Type == tokLBracket || compiler.next.Type == tokDot || compiler.next.Type == tokLParen {
 		line := compiler.token.Line
-		compileExpression(compiler, PrecedenceNone)
-		if compiler.token.Type == TKRParen {
+		compileExpression(compiler, precedenceNone)
+		if compiler.token.Type == tokRParen {
 			forward(compiler)
 			emitPop(compiler, 1, line)
 			return
@@ -288,12 +369,12 @@ func compileAssignment(compiler *Compiler) {
 		assHelper[assHelperOffset].isCollection = append(assHelper[assHelperOffset].isCollection, false)
 		forward(compiler)
 	}
-	for compiler.token.Type == TKComma {
+	for compiler.token.Type == tokComma {
 		forward(compiler)
-		check(compiler, TKIdentifier)
-		if compiler.next.Type == TKLBracket || compiler.next.Type == TKDot || compiler.next.Type == TKLParen {
-			compileExpression(compiler, PrecedenceNone)
-			if compiler.token.Type == TKRParen {
+		check(compiler, tokIdentifier)
+		if compiler.next.Type == tokLBracket || compiler.next.Type == tokDot || compiler.next.Type == tokLParen {
+			compileExpression(compiler, precedenceNone)
+			if compiler.token.Type == tokRParen {
 				compilerPrintError("subscription [expr] or selection (.)", compiler.token, compiler.lexer.fileName)
 			}
 			operatorType := compiler.token.Type
@@ -313,29 +394,29 @@ func compileAssignment(compiler *Compiler) {
 	}
 	// Assignment statements switch. Here the compilations takes two possible paths depending on the assignment oparator: simple (-) or operational (<op>=).
 	switch compiler.token.Type {
-	case TKEquation:
+	case tokEquation:
 		compileSimpleAssignment(compiler, compiler.token.Line, assHelperOffset)
-	case TKAddAssign:
+	case tokAddAssign:
 		compileCompoundAssignment(compiler, compiler.token.Line, assHelperOffset, compiler.token.Type, TKAdd)
-	case TKSubAssign:
+	case tokSubAssign:
 		compileCompoundAssignment(compiler, compiler.token.Line, assHelperOffset, compiler.token.Type, TKMinus)
-	case TKMulAssign:
+	case tokMulAssign:
 		compileCompoundAssignment(compiler, compiler.token.Line, assHelperOffset, compiler.token.Type, TKMul)
-	case TKDivAssign:
+	case tokDivAssign:
 		compileCompoundAssignment(compiler, compiler.token.Line, assHelperOffset, compiler.token.Type, TKDiv)
-	case TKRemAssign:
+	case tokRemAssign:
 		compileCompoundAssignment(compiler, compiler.token.Line, assHelperOffset, compiler.token.Type, TKPercent)
-	case TKPowAssign:
+	case tokPowAssign:
 		compileCompoundAssignment(compiler, compiler.token.Line, assHelperOffset, compiler.token.Type, TKPower)
-	case TKBitAndAssign:
+	case tokBitAndAssign:
 		compileCompoundAssignment(compiler, compiler.token.Line, assHelperOffset, compiler.token.Type, TKAmpersand)
-	case TKBitOrAssign:
+	case tokBitOrAssign:
 		compileCompoundAssignment(compiler, compiler.token.Line, assHelperOffset, compiler.token.Type, TKBar)
-	case TKBitXorAssign:
+	case tokBitXorAssign:
 		compileCompoundAssignment(compiler, compiler.token.Line, assHelperOffset, compiler.token.Type, TKHat)
-	case TKBitLShiftAssign:
+	case tokBitLShiftAssign:
 		compileCompoundAssignment(compiler, compiler.token.Line, assHelperOffset, compiler.token.Type, TKLShift)
-	case TKBitRShiftAssign:
+	case tokBitRShiftAssign:
 		compileCompoundAssignment(compiler, compiler.token.Line, assHelperOffset, compiler.token.Type, TKRShift)
 	default:
 		compilerPrintError("Assignment", compiler.token, compiler.lexer.fileName)
@@ -343,15 +424,15 @@ func compileAssignment(compiler *Compiler) {
 }
 
 // This function compiles simple assignments. A simple assignment has the form <idLst> = <exprList>
-func compileSimpleAssignment(compiler *Compiler, line Bytecode, assHelperOffset int) {
-	check(compiler, TKEquation)
+func compileSimpleAssignment(compiler *compiler, line Bytecode, assHelperOffset int) {
+	check(compiler, tokEquation)
 	forward(compiler)
-	compileExpression(compiler, PrecedenceNone)
+	compileExpression(compiler, precedenceNone)
 	forward(compiler)
 	assHelper[assHelperOffset].expressionsCount++
-	for compiler.token.Type == TKComma {
+	for compiler.token.Type == tokComma {
 		forward(compiler)
-		compileExpression(compiler, PrecedenceNone)
+		compileExpression(compiler, precedenceNone)
 		forward(compiler)
 		assHelper[assHelperOffset].expressionsCount++
 	}
@@ -381,13 +462,13 @@ func compileSimpleAssignment(compiler *Compiler, line Bytecode, assHelperOffset 
 
 // It follows three helper functions for simple assignment.
 
-func emitSimpleAssignment(compiler *Compiler, lvaluesCount, assHelperOffset, tokensIndex int, line UInt32) {
+func emitSimpleAssignment(compiler *compiler, lvaluesCount, assHelperOffset, tokensIndex int, line UInt32) {
 	for j := lvaluesCount - 1; j >= 0; j-- {
 		if assHelper[assHelperOffset].isCollection[j] {
-			if assHelper[assHelperOffset].operatorType[j] == TKRBracket {
-				emitMutDataStructure(compiler, Bytecode(j), assHelper[assHelperOffset].indexType[j], MutatingOperatorSubscript, line)
+			if assHelper[assHelperOffset].operatorType[j] == tokRBracket {
+				emitMutDataStructure(compiler, Bytecode(j), assHelper[assHelperOffset].indexType[j], mutatingOperatorSubscript, line)
 			} else {
-				emitMutDataStructure(compiler, Bytecode(j), assHelper[assHelperOffset].indexType[j], MutatingOperatorSelector, line)
+				emitMutDataStructure(compiler, Bytecode(j), assHelper[assHelperOffset].indexType[j], mutatingOperatorSelector, line)
 			}
 		} else {
 			emitGlobalAssignment(compiler, assHelperOffset, tokensIndex, line)
@@ -396,13 +477,13 @@ func emitSimpleAssignment(compiler *Compiler, lvaluesCount, assHelperOffset, tok
 	}
 }
 
-func emitSimpleLocalAssignment(compiler *Compiler, lvaluesCount, assHelperOffset, tokensIndex int, line UInt32) {
+func emitSimpleLocalAssignment(compiler *compiler, lvaluesCount, assHelperOffset, tokensIndex int, line UInt32) {
 	for j := lvaluesCount - 1; j >= 0; j-- {
 		if assHelper[assHelperOffset].isCollection[j] {
-			if assHelper[assHelperOffset].operatorType[j] == TKRBracket {
-				emitMutDataStructure(compiler, Bytecode(j), assHelper[assHelperOffset].indexType[j], MutatingOperatorSubscript, line)
+			if assHelper[assHelperOffset].operatorType[j] == tokRBracket {
+				emitMutDataStructure(compiler, Bytecode(j), assHelper[assHelperOffset].indexType[j], mutatingOperatorSubscript, line)
 			} else {
-				emitMutDataStructure(compiler, Bytecode(j), assHelper[assHelperOffset].indexType[j], MutatingOperatorSelector, line)
+				emitMutDataStructure(compiler, Bytecode(j), assHelper[assHelperOffset].indexType[j], mutatingOperatorSelector, line)
 			}
 		} else {
 			index := resolveLocal(compiler, assHelper[assHelperOffset].tokens[tokensIndex].Description)
@@ -420,7 +501,7 @@ func emitSimpleLocalAssignment(compiler *Compiler, lvaluesCount, assHelperOffset
 	}
 }
 
-func emitGlobalAssignment(compiler *Compiler, assHelperOffset, tokensIndex int, line UInt32) {
+func emitGlobalAssignment(compiler *compiler, assHelperOffset, tokensIndex int, line UInt32) {
 	if pos, exists := compiler.gIDPos[assHelper[assHelperOffset].tokens[tokensIndex].Description]; exists {
 		emitSetGlobal(compiler, pos, line)
 	} else {
@@ -432,15 +513,15 @@ func emitGlobalAssignment(compiler *Compiler, assHelperOffset, tokensIndex int, 
 }
 
 // This function compiles operational assignments. An operational assignment has the form <idLst> <op>= <exprList>
-func compileCompoundAssignment(compiler *Compiler, line Bytecode, assHelperOffset int, operatorType, operator byte) {
+func compileCompoundAssignment(compiler *compiler, line Bytecode, assHelperOffset int, operatorType, operator byte) {
 	check(compiler, operatorType)
 	forward(compiler)
-	compileExpression(compiler, PrecedenceNone)
+	compileExpression(compiler, precedenceNone)
 	forward(compiler)
 	assHelper[assHelperOffset].expressionsCount++
-	for compiler.token.Type == TKComma {
+	for compiler.token.Type == tokComma {
 		forward(compiler)
-		compileExpression(compiler, PrecedenceNone)
+		compileExpression(compiler, precedenceNone)
 		forward(compiler)
 		assHelper[assHelperOffset].expressionsCount++
 	}
@@ -470,13 +551,13 @@ func compileCompoundAssignment(compiler *Compiler, line Bytecode, assHelperOffse
 
 // It follows three helper functions for compile compund assignments.
 
-func emitCompoundAssignment(compiler *Compiler, lvaluesCount, assHelperOffset, tokensIndex int, operatorType byte, line UInt32) {
+func emitCompoundAssignment(compiler *compiler, lvaluesCount, assHelperOffset, tokensIndex int, operatorType byte, line UInt32) {
 	for j := lvaluesCount - 1; j >= 0; j-- {
 		if assHelper[assHelperOffset].isCollection[j] {
-			if assHelper[assHelperOffset].operatorType[j] == TKRBracket {
-				emitCompoundMutDataStructure(compiler, Bytecode(j), line, Bytecode(operatorType), MutatingOperatorSubscript, assHelper[assHelperOffset].indexType[j])
+			if assHelper[assHelperOffset].operatorType[j] == tokRBracket {
+				emitCompoundMutDataStructure(compiler, Bytecode(j), line, Bytecode(operatorType), mutatingOperatorSubscript, assHelper[assHelperOffset].indexType[j])
 			} else {
-				emitCompoundMutDataStructure(compiler, Bytecode(j), line, Bytecode(operatorType), MutatingOperatorSelector, assHelper[assHelperOffset].indexType[j])
+				emitCompoundMutDataStructure(compiler, Bytecode(j), line, Bytecode(operatorType), mutatingOperatorSelector, assHelper[assHelperOffset].indexType[j])
 			}
 		} else {
 			emitCompoundGlobalAssignment(compiler, assHelperOffset, tokensIndex, operatorType, line)
@@ -485,13 +566,13 @@ func emitCompoundAssignment(compiler *Compiler, lvaluesCount, assHelperOffset, t
 	}
 }
 
-func emitCompoundLocalAssignment(compiler *Compiler, lvaluesCount, assHelperOffset, tokensIndex int, operatorType byte, line UInt32) {
+func emitCompoundLocalAssignment(compiler *compiler, lvaluesCount, assHelperOffset, tokensIndex int, operatorType byte, line UInt32) {
 	for j := lvaluesCount - 1; j >= 0; j-- {
 		if assHelper[assHelperOffset].isCollection[j] {
-			if assHelper[assHelperOffset].operatorType[j] == TKRBracket {
-				emitCompoundMutDataStructure(compiler, Bytecode(j), line, Bytecode(operatorType), MutatingOperatorSubscript, assHelper[assHelperOffset].indexType[j])
+			if assHelper[assHelperOffset].operatorType[j] == tokRBracket {
+				emitCompoundMutDataStructure(compiler, Bytecode(j), line, Bytecode(operatorType), mutatingOperatorSubscript, assHelper[assHelperOffset].indexType[j])
 			} else {
-				emitCompoundMutDataStructure(compiler, Bytecode(j), line, Bytecode(operatorType), MutatingOperatorSelector, assHelper[assHelperOffset].indexType[j])
+				emitCompoundMutDataStructure(compiler, Bytecode(j), line, Bytecode(operatorType), mutatingOperatorSelector, assHelper[assHelperOffset].indexType[j])
 			}
 		} else {
 			index := resolveLocal(compiler, assHelper[assHelperOffset].tokens[tokensIndex].Description)
@@ -509,7 +590,7 @@ func emitCompoundLocalAssignment(compiler *Compiler, lvaluesCount, assHelperOffs
 	}
 }
 
-func emitCompoundGlobalAssignment(compiler *Compiler, assHelperOffset, tokensIndex int, operatorType byte, line UInt32) {
+func emitCompoundGlobalAssignment(compiler *compiler, assHelperOffset, tokensIndex int, operatorType byte, line UInt32) {
 	if pos, exists := compiler.gIDPos[assHelper[assHelperOffset].tokens[tokensIndex].Description]; exists {
 		emitCompoundSetGlobal(compiler, pos, line, Bytecode(operatorType))
 	} else {
@@ -520,11 +601,11 @@ func emitCompoundGlobalAssignment(compiler *Compiler, assHelperOffset, tokensInd
 	}
 }
 
-func compileStruct(compiler *Compiler) {
+func compileStruct(compiler *compiler) {
 	line := compiler.token.Line
-	check(compiler, TKStruct)
+	check(compiler, tokStruct)
 	forward(compiler)
-	check(compiler, TKIdentifier)
+	check(compiler, tokIdentifier)
 	typeNameToken := compiler.token
 	forward(compiler)
 	propertiesHelper := make(Namespace)
@@ -533,35 +614,35 @@ func compileStruct(compiler *Compiler) {
 	derivationCount := Bytecode(0)
 	if compiler.token.Type == TKLT {
 		forward(compiler)
-		compileExpression(compiler, PrecedenceNone)
+		compileExpression(compiler, precedenceNone)
 		forward(compiler)
 		hasDeriving = true
 		derivationCount++
-		for compiler.token.Type == TKComma {
+		for compiler.token.Type == tokComma {
 			forward(compiler)
-			compileExpression(compiler, PrecedenceNone)
+			compileExpression(compiler, precedenceNone)
 			forward(compiler)
 			derivationCount++
 		}
 	}
-	check(compiler, TKLCurly)
+	check(compiler, tokLCurly)
 	forward(compiler)
 	newStruct := Struct{Id: globalStructUniqueID, Name: typeNameToken.Description, Methods: make(Namespace), Public: make(Namespace), Private: make(Namespace)}
 	globalStructUniqueID++
 	propertiesHelper[typeNameToken.Description] = NilValue
 	stuffCount := Bytecode(0)
-	for compiler.token.Type != TKRCurly {
+	for compiler.token.Type != tokRCurly {
 		switch compiler.token.Type {
-		case TKIdentifier:
-			check(compiler, TKIdentifier)
+		case tokIdentifier:
+			check(compiler, tokIdentifier)
 			if _, exists := propertiesHelper[compiler.token.Description]; exists {
 				redefinedField(compiler.token, compiler.lexer.fileName)
 			}
 			propertiesHelper[compiler.token.Description] = NilValue
 			newStruct.Private[compiler.token.Description] = NilValue
 			forward(compiler)
-			for compiler.token.Type == TKIdentifier {
-				check(compiler, TKIdentifier)
+			for compiler.token.Type == tokIdentifier {
+				check(compiler, tokIdentifier)
 				if _, exists := propertiesHelper[compiler.token.Description]; exists {
 					redefinedField(compiler.token, compiler.lexer.fileName)
 				}
@@ -569,18 +650,18 @@ func compileStruct(compiler *Compiler) {
 				newStruct.Private[compiler.token.Description] = NilValue
 				forward(compiler)
 			}
-		case TKPublic:
-			check(compiler, TKPublic)
+		case tokPublic:
+			check(compiler, tokPublic)
 			forward(compiler)
-			check(compiler, TKIdentifier)
+			check(compiler, tokIdentifier)
 			if _, exists := propertiesHelper[compiler.token.Description]; exists {
 				redefinedField(compiler.token, compiler.lexer.fileName)
 			}
 			propertiesHelper[compiler.token.Description] = NilValue
 			newStruct.Public[compiler.token.Description] = NilValue
 			forward(compiler)
-			for compiler.token.Type == TKIdentifier {
-				check(compiler, TKIdentifier)
+			for compiler.token.Type == tokIdentifier {
+				check(compiler, tokIdentifier)
 				if _, exists := propertiesHelper[compiler.token.Description]; exists {
 					redefinedField(compiler.token, compiler.lexer.fileName)
 				}
@@ -588,10 +669,10 @@ func compileStruct(compiler *Compiler) {
 				newStruct.Public[compiler.token.Description] = NilValue
 				forward(compiler)
 			}
-		case TKFunction:
-			check(compiler, TKFunction)
+		case tokFunction:
+			check(compiler, tokFunction)
 			forward(compiler)
-			check(compiler, TKIdentifier)
+			check(compiler, tokIdentifier)
 			methodIDToken := compiler.token
 			forward(compiler)
 			if _, exists := methodsHelper[methodIDToken.Description]; exists {
@@ -604,7 +685,7 @@ func compileStruct(compiler *Compiler) {
 			compilerPrintError("type, property or method definition", compiler.token, compiler.lexer.fileName)
 		}
 	}
-	check(compiler, TKRCurly)
+	check(compiler, tokRCurly)
 	forward(compiler)
 	emitConstant(compiler, newStruct, typeNameToken.Line)
 	emitBuildStruct(compiler, stuffCount, typeNameToken.Line)
@@ -626,21 +707,21 @@ func compileStruct(compiler *Compiler) {
 	propertiesHelper = nil
 }
 
-func compileMethod(compiler *Compiler, methodIDToken Token) {
+func compileMethod(compiler *compiler, methodIDToken token) {
 	isvararg := false
 	arity := Bytecode(0)
 	paramsMap := make(map[string]struct{})
-	var params []Token
-	if compiler.token.Type == TK3Dots {
-		check(compiler, TK3Dots)
+	var params []token
+	if compiler.token.Type == tok3Dots {
+		check(compiler, tok3Dots)
 		forward(compiler)
-		check(compiler, TKIdentifier)
+		check(compiler, tokIdentifier)
 		params = append(params, compiler.token)
 		forward(compiler)
 		isvararg = true
 	} else {
-		for compiler.token.Type != TKLCurly && compiler.token.Type != TK3Dots {
-			check(compiler, TKIdentifier)
+		for compiler.token.Type != tokLCurly && compiler.token.Type != tok3Dots {
+			check(compiler, tokIdentifier)
 			if _, isParam := paramsMap[compiler.token.Description]; isParam || compiler.token.Description == methodIDToken.Description {
 				argumentError(compiler.token, compiler.lexer.fileName)
 			} else {
@@ -650,66 +731,66 @@ func compileMethod(compiler *Compiler, methodIDToken Token) {
 			forward(compiler)
 			arity++
 		}
-		if compiler.token.Type == TK3Dots {
-			check(compiler, TK3Dots)
+		if compiler.token.Type == tok3Dots {
+			check(compiler, tok3Dots)
 			forward(compiler)
-			check(compiler, TKIdentifier)
+			check(compiler, tokIdentifier)
 			params = append(params, compiler.token)
 			forward(compiler)
 			isvararg = true
 		}
 	}
-	check(compiler, TKLCurly)
+	check(compiler, tokLCurly)
 	forward(compiler)
 	newFunction, freeVariables := buildMethodBody(compiler, params)
 	newFunction.Name = methodIDToken.Description
 	newFunction.Arity = arity
 	newFunction.Vararg = isvararg
 	emitBuildClosure(compiler, newFunction, freeVariables, methodIDToken.Line)
-	check(compiler, TKRCurly)
+	check(compiler, tokRCurly)
 	forward(compiler)
 	paramsMap = nil
 	params = nil
 	freeVariables = nil
 }
 
-func buildMethodBody(compiler *Compiler, params []Token) (Function, []CompFreeVar) {
+func buildMethodBody(compiler *compiler, params []token) (Function, []freeVar) {
 	childCompiler := newChildCompiler(compiler)
 	childCompiler.canAccess = true
 	beginScope(childCompiler)
 	for _, tok := range params {
 		addLocal(childCompiler, tok)
 	}
-	for childCompiler.token.Type != TKEof && childCompiler.token.Type != TKRCurly {
+	for childCompiler.token.Type != tokEOF && childCompiler.token.Type != tokRCurly {
 		switch childCompiler.token.Type {
-		case TKLet:
+		case tokLet:
 			compileDeclaration(childCompiler)
-		case TKIdentifier:
+		case tokIdentifier:
 			compileAssignment(childCompiler)
-		case TKStruct:
+		case tokStruct:
 			compileStruct(childCompiler)
-		case TKFunction:
+		case tokFunction:
 			compileClosure(childCompiler)
-		case TKIf:
+		case tokIf:
 			compileIf(childCompiler, false)
-		case TKFor:
+		case tokFor:
 			compileFor(childCompiler)
-		case TKLabel:
+		case tokLabel:
 			switch childCompiler.next.Type {
-			case TKFor:
+			case tokFor:
 				compileFor(childCompiler)
 			default:
 				compilerPrintError("Statement", childCompiler.next, childCompiler.lexer.fileName)
 			}
-		case TKSwitch:
+		case tokSwitch:
 			compileSwitch(childCompiler, false)
-		case TKReturn:
+		case tokReturn:
 			compileReturn(childCompiler)
-		case TKDefer:
+		case tokDefer:
 			compileDefer(childCompiler)
-		case TKExtension:
+		case tokExtension:
 			compileExtension(childCompiler)
-		case TKLCurly:
+		case tokLCurly:
 			compileBlock(childCompiler, false)
 		default:
 			compilerPrintError("Statement", childCompiler.token, childCompiler.lexer.fileName)
@@ -728,28 +809,28 @@ func buildMethodBody(compiler *Compiler, params []Token) (Function, []CompFreeVa
 	return childCompiler.function, childCompiler.freeVariables
 }
 
-func compileExtension(compiler *Compiler) {
+func compileExtension(compiler *compiler) {
 	line := compiler.token.Line
-	check(compiler, TKExtension)
+	check(compiler, tokExtension)
 	forward(compiler)
 	typeCount := Bytecode(0)
 	fnNames := make(Namespace)
-	compileExpression(compiler, PrecedenceNone)
+	compileExpression(compiler, precedenceNone)
 	forward(compiler)
 	typeCount++
-	for compiler.token.Type == TKComma {
+	for compiler.token.Type == tokComma {
 		forward(compiler)
-		compileExpression(compiler, PrecedenceNone)
+		compileExpression(compiler, precedenceNone)
 		forward(compiler)
 		typeCount++
 	}
-	check(compiler, TKLCurly)
+	check(compiler, tokLCurly)
 	forward(compiler)
 	methodCount := Bytecode(0)
-	for compiler.token.Type == TKFunction {
-		check(compiler, TKFunction)
+	for compiler.token.Type == tokFunction {
+		check(compiler, tokFunction)
 		forward(compiler)
-		check(compiler, TKIdentifier)
+		check(compiler, tokIdentifier)
 		methodIDToken := compiler.token
 		forward(compiler)
 		if _, exists := fnNames[methodIDToken.Description]; exists {
@@ -759,7 +840,7 @@ func compileExtension(compiler *Compiler) {
 		compileMethod(compiler, methodIDToken)
 		methodCount++
 	}
-	check(compiler, TKRCurly)
+	check(compiler, tokRCurly)
 	forward(compiler)
 	if typeCount > maxTypeExtensions {
 		maxTypeExtensionError(compiler.lexer.fileName)
@@ -768,27 +849,27 @@ func compileExtension(compiler *Compiler) {
 	fnNames = nil
 }
 
-func compileConstNamespace(compiler *Compiler) {
+func compileConstNamespace(compiler *compiler) {
 	line := compiler.token.Line
 	forward(compiler)
-	check(compiler, TKIdentifier)
+	check(compiler, tokIdentifier)
 	name := compiler.token.Description
 	forward(compiler)
-	check(compiler, TKLCurly)
+	check(compiler, tokLCurly)
 	forward(compiler)
 	indexer := Bytecode(0)
 	constNamespace := NamedConstants{Name: name, Constants: make(Namespace), Indexes: make(map[Bytecode]string)}
-	if compiler.token.Type == TKIdentifier {
+	if compiler.token.Type == tokIdentifier {
 		switch compiler.next.Type {
-		case TKIdentifier:
-			check(compiler, TKIdentifier)
+		case tokIdentifier:
+			check(compiler, tokIdentifier)
 			constId := compiler.token
 			forward(compiler)
 			if compiler.token.Description == constInit {
 				forward(compiler)
-				check(compiler, TKEquation)
+				check(compiler, tokEquation)
 				forward(compiler)
-				check(compiler, TKInteger)
+				check(compiler, tokInteger)
 				ordinal := Int(0)
 				if value, err := strconv.ParseInt(compiler.token.Description, 0, 64); err == nil {
 					ordinal = Int(value)
@@ -797,7 +878,7 @@ func compileConstNamespace(compiler *Compiler) {
 				}
 				constNamespace.Constants[constId.Description] = ordinal
 				forward(compiler)
-				for compiler.token.Type == TKIdentifier {
+				for compiler.token.Type == tokIdentifier {
 					ordinal++
 					constNamespace.Constants[compiler.token.Description] = ordinal
 					forward(compiler)
@@ -805,21 +886,21 @@ func compileConstNamespace(compiler *Compiler) {
 			} else {
 				ordinal := Int(0)
 				constNamespace.Constants[constId.Description] = ordinal
-				for compiler.token.Type == TKIdentifier {
+				for compiler.token.Type == tokIdentifier {
 					ordinal++
 					constNamespace.Constants[compiler.token.Description] = ordinal
 					forward(compiler)
 				}
 			}
-			check(compiler, TKRCurly)
+			check(compiler, tokRCurly)
 			forward(compiler)
 			emitConstant(compiler, constNamespace, line)
-		case TKEquation:
+		case tokEquation:
 			constId := compiler.token
 			forward(compiler)
-			check(compiler, TKEquation)
+			check(compiler, tokEquation)
 			forward(compiler)
-			compileExpression(compiler, PrecedenceNone)
+			compileExpression(compiler, precedenceNone)
 			forward(compiler)
 			if _, exists := constNamespace.Constants[constId.Description]; exists || constId.Description == name {
 				redefinedField(constId, compiler.lexer.fileName)
@@ -828,12 +909,12 @@ func compileConstNamespace(compiler *Compiler) {
 				constNamespace.Constants[constId.Description] = NilValue
 				constNamespace.Indexes[indexer] = constId.Description
 			}
-			for compiler.token.Type == TKIdentifier {
+			for compiler.token.Type == tokIdentifier {
 				constId := compiler.token
 				forward(compiler)
-				check(compiler, TKEquation)
+				check(compiler, tokEquation)
 				forward(compiler)
-				compileExpression(compiler, PrecedenceNone)
+				compileExpression(compiler, precedenceNone)
 				forward(compiler)
 				if _, exists := constNamespace.Constants[constId.Description]; exists || constId.Description == name {
 					redefinedField(constId, compiler.lexer.fileName)
@@ -843,21 +924,21 @@ func compileConstNamespace(compiler *Compiler) {
 					constNamespace.Indexes[indexer] = constId.Description
 				}
 			}
-			check(compiler, TKRCurly)
+			check(compiler, tokRCurly)
 			forward(compiler)
 			emitConstant(compiler, constNamespace, line)
 			emitConstantNamespace(compiler, indexer, line)
-		case TKRCurly:
+		case tokRCurly:
 			constNamespace.Constants[compiler.token.Description] = Int(0)
 			forward(compiler)
-			check(compiler, TKRCurly)
+			check(compiler, tokRCurly)
 			forward(compiler)
 			emitConstant(compiler, constNamespace, line)
 		default:
 			compilerPrintError("Identifier or }", compiler.next, compiler.lexer.fileName)
 		}
 	} else {
-		check(compiler, TKRCurly)
+		check(compiler, tokRCurly)
 		forward(compiler)
 		emitConstant(compiler, constNamespace, line)
 	}
@@ -871,27 +952,27 @@ func compileConstNamespace(compiler *Compiler) {
 	}
 }
 
-func compileClosure(compiler *Compiler) {
+func compileClosure(compiler *compiler) {
 	line := compiler.token.Line
-	check(compiler, TKFunction)
+	check(compiler, tokFunction)
 	forward(compiler)
-	check(compiler, TKIdentifier)
+	check(compiler, tokIdentifier)
 	functionIDToken := compiler.token
 	forward(compiler)
 	isvararg := false
 	arity := Bytecode(0)
 	paramsMap := make(map[string]struct{})
-	var params []Token
-	if compiler.token.Type == TK3Dots {
-		check(compiler, TK3Dots)
+	var params []token
+	if compiler.token.Type == tok3Dots {
+		check(compiler, tok3Dots)
 		forward(compiler)
-		check(compiler, TKIdentifier)
+		check(compiler, tokIdentifier)
 		params = append(params, compiler.token)
 		forward(compiler)
 		isvararg = true
 	} else {
-		for compiler.token.Type != TKLCurly && compiler.token.Type != TK3Dots {
-			check(compiler, TKIdentifier)
+		for compiler.token.Type != tokLCurly && compiler.token.Type != tok3Dots {
+			check(compiler, tokIdentifier)
 			if _, isParam := paramsMap[compiler.token.Description]; isParam || compiler.token.Description == functionIDToken.Description {
 				argumentError(compiler.token, compiler.lexer.fileName)
 			} else {
@@ -901,23 +982,23 @@ func compileClosure(compiler *Compiler) {
 			forward(compiler)
 			arity++
 		}
-		if compiler.token.Type == TK3Dots {
-			check(compiler, TK3Dots)
+		if compiler.token.Type == tok3Dots {
+			check(compiler, tok3Dots)
 			forward(compiler)
-			check(compiler, TKIdentifier)
+			check(compiler, tokIdentifier)
 			params = append(params, compiler.token)
 			forward(compiler)
 			isvararg = true
 		}
 	}
-	check(compiler, TKLCurly)
+	check(compiler, tokLCurly)
 	forward(compiler)
 	newFunction, freeVariables := buildFunctionBody(compiler, params)
 	newFunction.Name = functionIDToken.Description
 	newFunction.Arity = arity
 	newFunction.Vararg = isvararg
 	emitBuildClosure(compiler, newFunction, freeVariables, functionIDToken.Line)
-	check(compiler, TKRCurly)
+	check(compiler, tokRCurly)
 	forward(compiler)
 	if compiler.scopeDepth > 0 {
 		addLocal(compiler, functionIDToken)
@@ -936,42 +1017,42 @@ func compileClosure(compiler *Compiler) {
 	freeVariables = nil
 }
 
-func buildFunctionBody(compiler *Compiler, params []Token) (Function, []CompFreeVar) {
+func buildFunctionBody(compiler *compiler, params []token) (Function, []freeVar) {
 	childCompiler := newChildCompiler(compiler)
 	beginScope(childCompiler)
 	for _, tok := range params {
 		addLocal(childCompiler, tok)
 	}
-	for childCompiler.token.Type != TKEof && childCompiler.token.Type != TKRCurly {
+	for childCompiler.token.Type != tokEOF && childCompiler.token.Type != tokRCurly {
 		switch childCompiler.token.Type {
-		case TKLet:
+		case tokLet:
 			compileDeclaration(childCompiler)
-		case TKIdentifier:
+		case tokIdentifier:
 			compileAssignment(childCompiler)
-		case TKStruct:
+		case tokStruct:
 			compileStruct(childCompiler)
-		case TKFunction:
+		case tokFunction:
 			compileClosure(childCompiler)
-		case TKIf:
+		case tokIf:
 			compileIf(childCompiler, false)
-		case TKFor:
+		case tokFor:
 			compileFor(childCompiler)
-		case TKLabel:
+		case tokLabel:
 			switch childCompiler.next.Type {
-			case TKFor:
+			case tokFor:
 				compileFor(childCompiler)
 			default:
 				compilerPrintError("Statement", childCompiler.next, childCompiler.lexer.fileName)
 			}
-		case TKSwitch:
+		case tokSwitch:
 			compileSwitch(childCompiler, false)
-		case TKReturn:
+		case tokReturn:
 			compileReturn(childCompiler)
-		case TKDefer:
+		case tokDefer:
 			compileDefer(childCompiler)
-		case TKExtension:
+		case tokExtension:
 			compileExtension(childCompiler)
-		case TKLCurly:
+		case tokLCurly:
 			compileBlock(childCompiler, false)
 		default:
 			compilerPrintError("Statement", childCompiler.token, childCompiler.lexer.fileName)
@@ -993,7 +1074,7 @@ func buildFunctionBody(compiler *Compiler, params []Token) (Function, []CompFree
 }
 
 // This function emits the instructions for creating closures at run time with or without taking free variables.
-func emitBuildClosure(compiler *Compiler, newFunction Function, freeVariables []CompFreeVar, line UInt32) {
+func emitBuildClosure(compiler *compiler, newFunction Function, freeVariables []freeVar, line UInt32) {
 	if newFunction.FreeVarCount == 0 {
 		emitClosure(compiler, appendValue(compiler, newFunction), line, false)
 	} else {
@@ -1004,7 +1085,7 @@ func emitBuildClosure(compiler *Compiler, newFunction Function, freeVariables []
 	}
 }
 
-func compileReturn(compiler *Compiler) {
+func compileReturn(compiler *compiler) {
 	line := compiler.token.Line
 	if compiler.hasDefer {
 		// |- OpCode -|
@@ -1013,32 +1094,32 @@ func compileReturn(compiler *Compiler) {
 		compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 	}
 	returnCount := Bytecode(1)
-	check(compiler, TKReturn)
+	check(compiler, tokReturn)
 	forward(compiler)
-	compileExpression(compiler, PrecedenceNone)
+	compileExpression(compiler, precedenceNone)
 	forward(compiler)
-	for compiler.token.Type == TKComma {
+	for compiler.token.Type == tokComma {
 		forward(compiler)
-		compileExpression(compiler, PrecedenceNone)
+		compileExpression(compiler, precedenceNone)
 		forward(compiler)
 		returnCount++
 	}
 	emitReturn(compiler, returnCount, line)
 }
 
-func compileDefer(compiler *Compiler) {
-	check(compiler, TKDefer)
+func compileDefer(compiler *compiler) {
+	check(compiler, tokDefer)
 	forward(compiler)
-	compileExpression(compiler, PrecedenceNone)
+	compileExpression(compiler, precedenceNone)
 	index := len(compiler.function.Code) - 1
-	if compiler.function.Code[index]&opcodeMask == OPCall && compiler.token.Type == TKRParen {
+	if compiler.function.Code[index]&opcodeMask == OPCall && compiler.token.Type == tokRParen {
 		forward(compiler)
 		oldInstr := compiler.function.Code[index]
 		instruction := OPDefer
 		instruction |= (oldInstr >> instructionShift) << instructionShift
 		compiler.function.Code[index] = instruction
 		compiler.hasDefer = true
-	} else if compiler.function.Code[index]&opcodeMask == OPInvokeMethod && compiler.token.Type == TKRParen {
+	} else if compiler.function.Code[index]&opcodeMask == OPInvokeMethod && compiler.token.Type == tokRParen {
 		forward(compiler)
 		oldInstr := compiler.function.Code[index]
 		instruction := OPDeferInvoke
@@ -1050,45 +1131,45 @@ func compileDefer(compiler *Compiler) {
 	}
 }
 
-func compileIf(compiler *Compiler, insideLoop bool) {
+func compileIf(compiler *compiler, insideLoop bool) {
 	offset := len(jumpHelper)
 	line := compiler.token.Line
-	check(compiler, TKIf)
+	check(compiler, tokIf)
 	forward(compiler)
-	compileExpression(compiler, PrecedenceNone)
+	compileExpression(compiler, precedenceNone)
 	forward(compiler)
 	jumpAddress := emitJumpIfFalse(compiler, line)
-	check(compiler, TKLCurly)
+	check(compiler, tokLCurly)
 	forward(compiler)
 	compileIFBlock(compiler, insideLoop)
-	check(compiler, TKRCurly)
+	check(compiler, tokRCurly)
 	forward(compiler)
 	jumpHelper = append(jumpHelper, emitJump(compiler, line))
 	compiler.function.Code[jumpAddress] |= Bytecode(len(compiler.function.Code)) << instructionShift
-	for compiler.token.Type == TKElse && compiler.next.Type == TKIf {
+	for compiler.token.Type == tokElse && compiler.next.Type == tokIf {
 		line = compiler.token.Line
-		check(compiler, TKElse)
+		check(compiler, tokElse)
 		forward(compiler)
-		check(compiler, TKIf)
+		check(compiler, tokIf)
 		forward(compiler)
-		compileExpression(compiler, PrecedenceNone)
+		compileExpression(compiler, precedenceNone)
 		forward(compiler)
 		jumpAddress := emitJumpIfFalse(compiler, line)
-		check(compiler, TKLCurly)
+		check(compiler, tokLCurly)
 		forward(compiler)
 		compileIFBlock(compiler, insideLoop)
-		check(compiler, TKRCurly)
+		check(compiler, tokRCurly)
 		forward(compiler)
 		jumpHelper = append(jumpHelper, emitJump(compiler, line))
 		compiler.function.Code[jumpAddress] |= Bytecode(len(compiler.function.Code)) << instructionShift
 	}
-	if compiler.token.Type == TKElse {
-		check(compiler, TKElse)
+	if compiler.token.Type == tokElse {
+		check(compiler, tokElse)
 		forward(compiler)
-		check(compiler, TKLCurly)
+		check(compiler, tokLCurly)
 		forward(compiler)
 		compileIFBlock(compiler, insideLoop)
-		check(compiler, TKRCurly)
+		check(compiler, tokRCurly)
 		forward(compiler)
 	}
 	instrAddress := Bytecode(len(compiler.function.Code))
@@ -1099,52 +1180,52 @@ func compileIf(compiler *Compiler, insideLoop bool) {
 	jumpHelper = jumpHelper[:offset]
 }
 
-func compileIFBlock(compiler *Compiler, insideLoop bool) {
+func compileIFBlock(compiler *compiler, insideLoop bool) {
 	beginScope(compiler)
-	for compiler.token.Type != TKEof &&
-		compiler.token.Type != TKRCurly &&
-		compiler.token.Type != TKElse {
+	for compiler.token.Type != tokEOF &&
+		compiler.token.Type != tokRCurly &&
+		compiler.token.Type != tokElse {
 		switch compiler.token.Type {
-		case TKLet:
+		case tokLet:
 			compileDeclaration(compiler)
-		case TKIdentifier:
+		case tokIdentifier:
 			compileAssignment(compiler)
-		case TKStruct:
+		case tokStruct:
 			compileStruct(compiler)
-		case TKFunction:
+		case tokFunction:
 			compileClosure(compiler)
-		case TKIf:
+		case tokIf:
 			compileIf(compiler, insideLoop)
-		case TKFor:
+		case tokFor:
 			compileFor(compiler)
-		case TKLabel:
+		case tokLabel:
 			switch compiler.next.Type {
-			case TKFor:
+			case tokFor:
 				compileFor(compiler)
 			default:
 				compilerPrintError("Statement", compiler.next, compiler.lexer.fileName)
 			}
-		case TKSwitch:
+		case tokSwitch:
 			compileSwitch(compiler, insideLoop)
-		case TKBreak:
+		case tokBreak:
 			if insideLoop {
 				compileBreak(compiler)
 			} else {
 				compilerPrintError("Statement", compiler.token, compiler.lexer.fileName)
 			}
-		case TKContinue:
+		case tokContinue:
 			if insideLoop {
 				compileContinue(compiler)
 			} else {
 				compilerPrintError("Statement", compiler.token, compiler.lexer.fileName)
 			}
-		case TKReturn:
+		case tokReturn:
 			compileReturn(compiler)
-		case TKDefer:
+		case tokDefer:
 			compileDefer(compiler)
-		case TKExtension:
+		case tokExtension:
 			compileExtension(compiler)
-		case TKLCurly:
+		case tokLCurly:
 			compileBlock(compiler, insideLoop)
 		default:
 			compilerPrintError("Statement", compiler.token, compiler.lexer.fileName)
@@ -1155,61 +1236,61 @@ func compileIFBlock(compiler *Compiler, insideLoop bool) {
 	}
 }
 
-func compileFor(compiler *Compiler) {
+func compileFor(compiler *compiler) {
 	variableCount := Bytecode(0)
 	loopOffset := len(loopHelper)
 	loopHelper = append(loopHelper, loopInfo{})
 	loopHelper[loopOffset].scopeDepth = compiler.scopeDepth
-	if compiler.token.Type == TKLabel {
+	if compiler.token.Type == tokLabel {
 		loopHelper[loopOffset].label = compiler.token.Description
 		forward(compiler)
 	}
 	line := compiler.token.Line
-	check(compiler, TKFor)
+	check(compiler, tokFor)
 	forward(compiler)
-	if compiler.token.Type == TKLCurly {
-		check(compiler, TKLCurly)
+	if compiler.token.Type == tokLCurly {
+		check(compiler, tokLCurly)
 		forward(compiler)
 		loopHelper[loopOffset].loopAddress = Bytecode(len(compiler.function.Code))
 		compileLoopBlock(compiler)
-		check(compiler, TKRCurly)
+		check(compiler, tokRCurly)
 		forward(compiler)
 		compiler.function.Code[emitJump(compiler, line)] |= loopHelper[loopOffset].loopAddress << instructionShift
 		afterLoopAddress := Bytecode(len(compiler.function.Code))
 		for i := 0; i < len(loopHelper[loopOffset].breaks); i++ {
 			compiler.function.Code[loopHelper[loopOffset].breaks[i]] |= afterLoopAddress << instructionShift
 		}
-	} else if compiler.next.Type == TKIn || compiler.next.Type == TKComma {
+	} else if compiler.next.Type == tokIn || compiler.next.Type == tokComma {
 		loopHelper[loopOffset].isRangeLoop = true
 		beginScope(compiler)
-		check(compiler, TKIdentifier)
-		compileNil(compiler, PrecedenceNone)
+		check(compiler, tokIdentifier)
+		compileNil(compiler, precedenceNone)
 		addLocal(compiler, compiler.token)
 		forward(compiler)
 		variableCount++
-		for compiler.token.Type == TKComma {
+		for compiler.token.Type == tokComma {
 			forward(compiler)
-			check(compiler, TKIdentifier)
-			compileNil(compiler, PrecedenceNone)
+			check(compiler, tokIdentifier)
+			compileNil(compiler, precedenceNone)
 			addLocal(compiler, compiler.token)
 			forward(compiler)
 			variableCount++
 		}
-		check(compiler, TKIn)
+		check(compiler, tokIn)
 		forward(compiler)
-		compileExpression(compiler, PrecedenceNone)
+		compileExpression(compiler, precedenceNone)
 		forward(compiler)
-		addLocal(compiler, Token{Type: TKIdentifier, Description: iteratorID, Line: compiler.token.Line})
+		addLocal(compiler, token{Type: tokIdentifier, Description: iteratorID, Line: compiler.token.Line})
 		loopHelper[loopOffset].loopAddress = Bytecode(len(compiler.function.Code))
 		jumpAddressCheck := emitNext(compiler, line)
 		if variableCount > 1 {
 			emitUnpackFor(compiler, variableCount, line)
 		}
-		check(compiler, TKLCurly)
+		check(compiler, tokLCurly)
 		forward(compiler)
 		compileLoopBlock(compiler)
 		line = compiler.token.Line
-		check(compiler, TKRCurly)
+		check(compiler, tokRCurly)
 		forward(compiler)
 		compiler.function.Code[emitJump(compiler, line)] |= loopHelper[loopOffset].loopAddress << instructionShift
 		afterLoopAddress := Bytecode(len(compiler.function.Code))
@@ -1223,14 +1304,14 @@ func compileFor(compiler *Compiler) {
 	} else {
 		jumpWhenFalseOrNil := 0
 		loopHelper[loopOffset].loopAddress = Bytecode(len(compiler.function.Code))
-		compileExpression(compiler, PrecedenceNone)
+		compileExpression(compiler, precedenceNone)
 		jumpWhenFalseOrNil = emitJumpIfFalse(compiler, line)
 		forward(compiler)
-		check(compiler, TKLCurly)
+		check(compiler, tokLCurly)
 		forward(compiler)
 		compileLoopBlock(compiler)
 		line = compiler.token.Line
-		check(compiler, TKRCurly)
+		check(compiler, tokRCurly)
 		forward(compiler)
 		compiler.function.Code[emitJump(compiler, line)] |= loopHelper[loopOffset].loopAddress << instructionShift
 		afterLoopAddress := Bytecode(len(compiler.function.Code))
@@ -1243,42 +1324,42 @@ func compileFor(compiler *Compiler) {
 	loopHelper = loopHelper[:loopOffset]
 }
 
-func compileLoopBlock(compiler *Compiler) {
+func compileLoopBlock(compiler *compiler) {
 	beginScope(compiler)
-	for compiler.token.Type != TKEof && compiler.token.Type != TKRCurly {
+	for compiler.token.Type != tokEOF && compiler.token.Type != tokRCurly {
 		switch compiler.token.Type {
-		case TKLet:
+		case tokLet:
 			compileDeclaration(compiler)
-		case TKIdentifier:
+		case tokIdentifier:
 			compileAssignment(compiler)
-		case TKStruct:
+		case tokStruct:
 			compileStruct(compiler)
-		case TKFunction:
+		case tokFunction:
 			compileClosure(compiler)
-		case TKIf:
+		case tokIf:
 			compileIf(compiler, true)
-		case TKFor:
+		case tokFor:
 			compileFor(compiler)
-		case TKLabel:
+		case tokLabel:
 			switch compiler.next.Type {
-			case TKFor:
+			case tokFor:
 				compileFor(compiler)
 			default:
 				compilerPrintError("Statement", compiler.next, compiler.lexer.fileName)
 			}
-		case TKSwitch:
+		case tokSwitch:
 			compileSwitch(compiler, true)
-		case TKBreak:
+		case tokBreak:
 			compileBreak(compiler)
-		case TKContinue:
+		case tokContinue:
 			compileContinue(compiler)
-		case TKReturn:
+		case tokReturn:
 			compileReturn(compiler)
-		case TKDefer:
+		case tokDefer:
 			compileDefer(compiler)
-		case TKExtension:
+		case tokExtension:
 			compileExtension(compiler)
-		case TKLCurly:
+		case tokLCurly:
 			compileBlock(compiler, true)
 		default:
 			compilerPrintError("Statement", compiler.token, compiler.lexer.fileName)
@@ -1289,29 +1370,29 @@ func compileLoopBlock(compiler *Compiler) {
 	}
 }
 
-func compileSwitch(compiler *Compiler, insideLoop bool) {
-	check(compiler, TKSwitch)
+func compileSwitch(compiler *compiler, insideLoop bool) {
+	check(compiler, tokSwitch)
 	forward(compiler)
 	switch compiler.token.Type {
-	case TKLCurly:
+	case tokLCurly:
 		offset := len(jumpHelper)
-		check(compiler, TKLCurly)
+		check(compiler, tokLCurly)
 		forward(compiler)
-		for compiler.token.Type == TKCase {
+		for compiler.token.Type == tokCase {
 			line := compiler.token.Line
-			check(compiler, TKCase)
+			check(compiler, tokCase)
 			forward(compiler)
-			compileExpression(compiler, PrecedenceNone)
+			compileExpression(compiler, precedenceNone)
 			forward(compiler)
 			jumpIfFalseInstructionIndex := emitJumpIfFalse(compiler, line)
-			check(compiler, TKColon)
+			check(compiler, tokColon)
 			forward(compiler)
 			compileSwitchCaseBlock(compiler, insideLoop)
 			jumpHelper = append(jumpHelper, emitJump(compiler, line))
 			compiler.function.Code[jumpIfFalseInstructionIndex] |= Bytecode(len(compiler.function.Code)) << instructionShift
 		}
 		compileSwitchDefaultBlock(compiler, insideLoop)
-		check(compiler, TKRCurly)
+		check(compiler, tokRCurly)
 		forward(compiler)
 		exitAddress := Bytecode(len(compiler.function.Code))
 		length := len(jumpHelper)
@@ -1324,29 +1405,29 @@ func compileSwitch(compiler *Compiler, insideLoop bool) {
 		patternOffset := len(patternHelper)
 		beginScope(compiler)
 		line := compiler.token.Line
-		compileExpression(compiler, PrecedenceNone)
+		compileExpression(compiler, precedenceNone)
 		forward(compiler)
-		addLocal(compiler, Token{Type: TKIdentifier, Description: switchID, Line: line})
+		addLocal(compiler, token{Type: tokIdentifier, Description: switchID, Line: line})
 		switchLocalIndex := resolveLocal(compiler, switchID)
-		check(compiler, TKLCurly)
+		check(compiler, tokLCurly)
 		forward(compiler)
-		for compiler.token.Type == TKCase {
+		for compiler.token.Type == tokCase {
 			line := compiler.token.Line
-			check(compiler, TKCase)
+			check(compiler, tokCase)
 			forward(compiler)
-			compileExpression(compiler, PrecedenceNone)
+			compileExpression(compiler, precedenceNone)
 			forward(compiler)
 			emitGetLocal(compiler, Bytecode(switchLocalIndex), line)
 			patternHelper = append(patternHelper, emitMatch(compiler, line))
-			for compiler.token.Type == TKComma {
-				check(compiler, TKComma)
+			for compiler.token.Type == tokComma {
+				check(compiler, tokComma)
 				forward(compiler)
-				compileExpression(compiler, PrecedenceNone)
+				compileExpression(compiler, precedenceNone)
 				forward(compiler)
 				emitGetLocal(compiler, Bytecode(switchLocalIndex), line)
 				patternHelper = append(patternHelper, emitMatch(compiler, line))
 			}
-			check(compiler, TKColon)
+			check(compiler, tokColon)
 			forward(compiler)
 			nextPatternAddress := emitJump(compiler, line)
 			for i := patternOffset; i < len(patternHelper); i++ {
@@ -1359,7 +1440,7 @@ func compileSwitch(compiler *Compiler, insideLoop bool) {
 		}
 		compileSwitchDefaultBlock(compiler, insideLoop)
 		line = compiler.token.Line
-		check(compiler, TKRCurly)
+		check(compiler, tokRCurly)
 		forward(compiler)
 		for i := offset; i < len(jumpHelper); i++ {
 			compiler.function.Code[jumpHelper[i]] |= Bytecode(len(compiler.function.Code)) << instructionShift
@@ -1371,50 +1452,50 @@ func compileSwitch(compiler *Compiler, insideLoop bool) {
 	}
 }
 
-func compileSwitchCaseBlock(compiler *Compiler, insideLoop bool) {
+func compileSwitchCaseBlock(compiler *compiler, insideLoop bool) {
 	beginScope(compiler)
-	for compiler.token.Type != TKEof && compiler.token.Type != TKCase && compiler.token.Type != TKDefault {
+	for compiler.token.Type != tokEOF && compiler.token.Type != tokCase && compiler.token.Type != tokDefault {
 		switch compiler.token.Type {
-		case TKLet:
+		case tokLet:
 			compileDeclaration(compiler)
-		case TKIdentifier:
+		case tokIdentifier:
 			compileAssignment(compiler)
-		case TKStruct:
+		case tokStruct:
 			compileStruct(compiler)
-		case TKFunction:
+		case tokFunction:
 			compileClosure(compiler)
-		case TKIf:
+		case tokIf:
 			compileIf(compiler, insideLoop)
-		case TKFor:
+		case tokFor:
 			compileFor(compiler)
-		case TKLabel:
+		case tokLabel:
 			switch compiler.next.Type {
-			case TKFor:
+			case tokFor:
 				compileFor(compiler)
 			default:
 				compilerPrintError("Statement", compiler.next, compiler.lexer.fileName)
 			}
-		case TKSwitch:
+		case tokSwitch:
 			compileSwitch(compiler, insideLoop)
-		case TKBreak:
+		case tokBreak:
 			if insideLoop {
 				compileBreak(compiler)
 			} else {
 				compilerPrintError("Statement", compiler.token, compiler.lexer.fileName)
 			}
-		case TKContinue:
+		case tokContinue:
 			if insideLoop {
 				compileContinue(compiler)
 			} else {
 				compilerPrintError("Statement", compiler.token, compiler.lexer.fileName)
 			}
-		case TKReturn:
+		case tokReturn:
 			compileReturn(compiler)
-		case TKDefer:
+		case tokDefer:
 			compileDefer(compiler)
-		case TKExtension:
+		case tokExtension:
 			compileExtension(compiler)
-		case TKLCurly:
+		case tokLCurly:
 			compileBlock(compiler, insideLoop)
 		default:
 			compilerPrintError("Statement", compiler.token, compiler.lexer.fileName)
@@ -1425,54 +1506,54 @@ func compileSwitchCaseBlock(compiler *Compiler, insideLoop bool) {
 	}
 }
 
-func compileSwitchDefaultBlock(compiler *Compiler, insideLoop bool) {
+func compileSwitchDefaultBlock(compiler *compiler, insideLoop bool) {
 	beginScope(compiler)
-	check(compiler, TKDefault)
+	check(compiler, tokDefault)
 	forward(compiler)
-	check(compiler, TKColon)
+	check(compiler, tokColon)
 	forward(compiler)
-	for compiler.token.Type != TKEof && compiler.token.Type != TKRCurly {
+	for compiler.token.Type != tokEOF && compiler.token.Type != tokRCurly {
 		switch compiler.token.Type {
-		case TKLet:
+		case tokLet:
 			compileDeclaration(compiler)
-		case TKIdentifier:
+		case tokIdentifier:
 			compileAssignment(compiler)
-		case TKStruct:
+		case tokStruct:
 			compileStruct(compiler)
-		case TKFunction:
+		case tokFunction:
 			compileClosure(compiler)
-		case TKIf:
+		case tokIf:
 			compileIf(compiler, insideLoop)
-		case TKFor:
+		case tokFor:
 			compileFor(compiler)
-		case TKLabel:
+		case tokLabel:
 			switch compiler.next.Type {
-			case TKFor:
+			case tokFor:
 				compileFor(compiler)
 			default:
 				compilerPrintError("Statement", compiler.next, compiler.lexer.fileName)
 			}
-		case TKSwitch:
+		case tokSwitch:
 			compileSwitch(compiler, insideLoop)
-		case TKBreak:
+		case tokBreak:
 			if insideLoop {
 				compileBreak(compiler)
 			} else {
 				compilerPrintError("Statement", compiler.token, compiler.lexer.fileName)
 			}
-		case TKContinue:
+		case tokContinue:
 			if insideLoop {
 				compileContinue(compiler)
 			} else {
 				compilerPrintError("Statement", compiler.token, compiler.lexer.fileName)
 			}
-		case TKReturn:
+		case tokReturn:
 			compileReturn(compiler)
-		case TKDefer:
+		case tokDefer:
 			compileDefer(compiler)
-		case TKExtension:
+		case tokExtension:
 			compileExtension(compiler)
-		case TKLCurly:
+		case tokLCurly:
 			compileBlock(compiler, insideLoop)
 		default:
 			compilerPrintError("Statement", compiler.token, compiler.lexer.fileName)
@@ -1483,11 +1564,11 @@ func compileSwitchDefaultBlock(compiler *Compiler, insideLoop bool) {
 	}
 }
 
-func compileBreak(compiler *Compiler) {
+func compileBreak(compiler *compiler) {
 	line := compiler.token.Line
-	check(compiler, TKBreak)
+	check(compiler, tokBreak)
 	forward(compiler)
-	if length := len(loopHelper); compiler.token.Type == TKLabel {
+	if length := len(loopHelper); compiler.token.Type == tokLabel {
 		var loopHelperIndex int
 		var found bool
 		for loopHelperIndex = 0; loopHelperIndex < length; loopHelperIndex++ {
@@ -1520,11 +1601,11 @@ func compileBreak(compiler *Compiler) {
 	}
 }
 
-func compileContinue(compiler *Compiler) {
+func compileContinue(compiler *compiler) {
 	line := compiler.token.Line
-	check(compiler, TKContinue)
+	check(compiler, tokContinue)
 	forward(compiler)
-	if length := len(loopHelper); compiler.token.Type == TKLabel {
+	if length := len(loopHelper); compiler.token.Type == tokLabel {
 		var found bool
 		var loopHelperIndex int
 		for loopHelperIndex = 0; loopHelperIndex < length; loopHelperIndex++ {
@@ -1557,78 +1638,78 @@ func compileContinue(compiler *Compiler) {
 	}
 }
 
-func compileBlock(compiler *Compiler, insideLoop bool) {
-	check(compiler, TKLCurly)
+func compileBlock(compiler *compiler, insideLoop bool) {
+	check(compiler, tokLCurly)
 	forward(compiler)
 	beginScope(compiler)
-	for compiler.token.Type != TKEof && compiler.token.Type != TKRCurly {
+	for compiler.token.Type != tokEOF && compiler.token.Type != tokRCurly {
 		switch compiler.token.Type {
-		case TKLet:
+		case tokLet:
 			compileDeclaration(compiler)
-		case TKIdentifier:
+		case tokIdentifier:
 			compileAssignment(compiler)
-		case TKStruct:
+		case tokStruct:
 			compileStruct(compiler)
-		case TKFunction:
+		case tokFunction:
 			compileClosure(compiler)
-		case TKIf:
+		case tokIf:
 			compileIf(compiler, insideLoop)
-		case TKFor:
+		case tokFor:
 			compileFor(compiler)
-		case TKLabel:
+		case tokLabel:
 			switch compiler.next.Type {
-			case TKFor:
+			case tokFor:
 				compileFor(compiler)
 			default:
 				compilerPrintError("Statement", compiler.next, compiler.lexer.fileName)
 			}
-		case TKSwitch:
+		case tokSwitch:
 			compileSwitch(compiler, insideLoop)
-		case TKBreak:
+		case tokBreak:
 			if insideLoop {
 				compileBreak(compiler)
 			} else {
 				compilerPrintError("Statement", compiler.token, compiler.lexer.fileName)
 			}
-		case TKContinue:
+		case tokContinue:
 			if insideLoop {
 				compileContinue(compiler)
 			} else {
 				compilerPrintError("Statement", compiler.token, compiler.lexer.fileName)
 			}
-		case TKReturn:
+		case tokReturn:
 			compileReturn(compiler)
-		case TKDefer:
+		case tokDefer:
 			compileDefer(compiler)
-		case TKExtension:
+		case tokExtension:
 			compileExtension(compiler)
-		case TKLCurly:
+		case tokLCurly:
 			compileBlock(compiler, insideLoop)
 		default:
 			compilerPrintError("Statement", compiler.token, compiler.lexer.fileName)
 		}
 	}
-	check(compiler, TKRCurly)
+	check(compiler, tokRCurly)
 	forward(compiler)
 	if count := endScope(compiler); count != 0 {
 		emitPop(compiler, count, compiler.token.Line)
 	}
 }
 
-func compileExpression(compiler *Compiler, precedence byte) {
+func compileExpression(compiler *compiler, precedence byte) {
 	prefixRule := compiler.rules[compiler.token.Type].prefix
 	if prefixRule == nil {
 		compilerPrintError("Expression", compiler.token, compiler.lexer.fileName)
 	}
 	prefixRule(compiler, precedence)
-	for precedence <= compiler.rules[compiler.next.Type].precedence && compiler.rules[compiler.next.Type].precedence != PrecedenceNone {
+	for precedence <= compiler.rules[compiler.next.Type].precedence && compiler.rules[compiler.next.Type].precedence != precedenceNone {
 		forward(compiler)
 		infixRule := compiler.rules[compiler.token.Type].infix
 		infixRule(compiler, precedence)
 	}
 }
 
-func compileInteger(compiler *Compiler, precedence byte) {
+func compileInteger(compiler *compiler, precedence byte) {
 	if value, err := strconv.ParseInt(string(compiler.token.Description), 0, 64); err == nil {
 		emitConstant(compiler, Int(value), compiler.token.Line)
 	} else {
@@ -1636,7 +1717,7 @@ func compileInteger(compiler *Compiler, precedence byte) {
 	}
 }
 
-func compileUInt(compiler *Compiler, precedence byte) {
+func compileUInt(compiler *compiler, precedence byte) {
 	if value, err := strconv.ParseUint(string(compiler.token.Description), 0, 64); err == nil {
 		emitConstant(compiler, UInt(value), compiler.token.Line)
 	} else {
@@ -1644,7 +1725,7 @@ func compileUInt(compiler *Compiler, precedence byte) {
 	}
 }
 
-func compileFloat(compiler *Compiler, precedence byte) {
+func compileFloat(compiler *compiler, precedence byte) {
 	if value, err := strconv.ParseFloat(compiler.token.Description, 64); err == nil {
 		emitConstant(compiler, Float(value), compiler.token.Line)
 	} else {
@@ -1652,11 +1733,11 @@ func compileFloat(compiler *Compiler, precedence byte) {
 	}
 }
 
-func compileString(compiler *Compiler, precedence byte) {
+func compileString(compiler *compiler, precedence byte) {
 	emitConstant(compiler, &String{Value: compiler.token.Description}, compiler.token.Line)
 }
 
-func compileBig(compiler *Compiler, precedence byte) {
+func compileBig(compiler *compiler, precedence byte) {
 	big := new(big.Int)
 	if _, success := big.SetString(compiler.token.Description, 0); success {
 		emitConstant(compiler, &BInt{Value: big}, compiler.token.Line)
@@ -1665,7 +1746,7 @@ func compileBig(compiler *Compiler, precedence byte) {
 	}
 }
 
-func compileRational(compiler *Compiler, precedence byte) {
+func compileRational(compiler *compiler, precedence byte) {
 	rat := new(big.Rat)
 	if _, success := rat.SetString(compiler.token.Description); success {
 		emitConstant(compiler, &Rational{Value: rat}, compiler.token.Line)
@@ -1674,7 +1755,7 @@ func compileRational(compiler *Compiler, precedence byte) {
 	}
 }
 
-func compileComplex(compiler *Compiler, precedence byte) {
+func compileComplex(compiler *compiler, precedence byte) {
 	if value, err := strconv.ParseComplex(compiler.token.Description, 128); err == nil {
 		emitConstant(compiler, Complex(value), compiler.token.Line)
 	} else {
@@ -1682,30 +1763,30 @@ func compileComplex(compiler *Compiler, precedence byte) {
 	}
 }
 
-func compileTrue(compiler *Compiler, precedence byte) {
+func compileTrue(compiler *compiler, precedence byte) {
 	// |- OPCode -|
 	compiler.function.Code = append(compiler.function.Code, OPTrue)
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = compiler.token.Line
 }
 
-func compileFalse(compiler *Compiler, precedence byte) {
+func compileFalse(compiler *compiler, precedence byte) {
 	// |- OPCode -|
 	compiler.function.Code = append(compiler.function.Code, OPFalse)
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = compiler.token.Line
 }
 
-func compileNil(compiler *Compiler, precedence byte) {
+func compileNil(compiler *compiler, precedence byte) {
 	// |- OPCode -|
 	compiler.function.Code = append(compiler.function.Code, OPNil)
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = compiler.token.Line
 }
 
-func compileRune(compiler *Compiler, precedence byte) {
+func compileRune(compiler *compiler, precedence byte) {
 	r, _ := utf8.DecodeLastRuneInString(compiler.token.Description)
 	emitConstant(compiler, Rune(r), compiler.token.Line)
 }
 
-func compileIdentifier(compiler *Compiler, precedence byte) {
+func compileIdentifier(compiler *compiler, precedence byte) {
 	if compiler.scopeDepth != 0 {
 		localIndex := resolveLocal(compiler, compiler.token.Description)
 		if localIndex == -1 {
@@ -1736,14 +1817,14 @@ func compileIdentifier(compiler *Compiler, precedence byte) {
 	}
 }
 
-func buildLambda(compiler *Compiler, params []Token) (Function, []CompFreeVar) {
+func buildLambda(compiler *compiler, params []token) (Function, []freeVar) {
 	line := compiler.token.Line
 	childCompiler := newChildCompiler(compiler)
 	beginScope(childCompiler)
 	for _, tok := range params {
 		addLocal(childCompiler, tok)
 	}
-	compileExpression(childCompiler, PrecedenceNone)
+	compileExpression(childCompiler, precedenceNone)
 	emitReturn(childCompiler, 1, line)
 	endScope(childCompiler)
 	updateCompiler(compiler, childCompiler)
@@ -1753,24 +1834,24 @@ func buildLambda(compiler *Compiler, params []Token) (Function, []CompFreeVar) {
 	return childCompiler.function, childCompiler.freeVariables
 }
 
-func compileAnonymousFunction(compiler *Compiler, precedence byte) {
+func compileAnonymousFunction(compiler *compiler, precedence byte) {
 	var isLambdaExpression bool
 	line := compiler.token.Line
 	forward(compiler)
 	isvararg := false
 	arity := Bytecode(0)
 	paramsMap := make(map[string]struct{})
-	var params []Token
-	if compiler.token.Type == TK3Dots {
-		check(compiler, TK3Dots)
+	var params []token
+	if compiler.token.Type == tok3Dots {
+		check(compiler, tok3Dots)
 		forward(compiler)
-		check(compiler, TKIdentifier)
+		check(compiler, tokIdentifier)
 		params = append(params, compiler.token)
 		forward(compiler)
 		isvararg = true
 	} else {
-		for compiler.token.Type != TKColon && compiler.token.Type != TKLCurly && compiler.token.Type != TK3Dots {
-			check(compiler, TKIdentifier)
+		for compiler.token.Type != tokColon && compiler.token.Type != tokLCurly && compiler.token.Type != tok3Dots {
+			check(compiler, tokIdentifier)
 			if _, isParam := paramsMap[compiler.token.Description]; isParam {
 				argumentError(compiler.token, compiler.lexer.fileName)
 			} else {
@@ -1780,24 +1861,24 @@ func compileAnonymousFunction(compiler *Compiler, precedence byte) {
 			forward(compiler)
 			arity++
 		}
-		if compiler.token.Type == TK3Dots {
-			check(compiler, TK3Dots)
+		if compiler.token.Type == tok3Dots {
+			check(compiler, tok3Dots)
 			forward(compiler)
-			check(compiler, TKIdentifier)
+			check(compiler, tokIdentifier)
 			params = append(params, compiler.token)
 			forward(compiler)
 			isvararg = true
 		}
 	}
-	if compiler.token.Type == TKColon {
+	if compiler.token.Type == tokColon {
 		isLambdaExpression = true
-		check(compiler, TKColon)
+		check(compiler, tokColon)
 	} else {
-		check(compiler, TKLCurly)
+		check(compiler, tokLCurly)
 	}
 	forward(compiler)
 	var newLambda Function
-	var freeVariables []CompFreeVar
+	var freeVariables []freeVar
 	if isLambdaExpression {
 		newLambda, freeVariables = buildLambda(compiler, params)
 	} else {
@@ -1808,7 +1889,7 @@ func compileAnonymousFunction(compiler *Compiler, precedence byte) {
 	newLambda.Vararg = isvararg
 	emitBuildClosure(compiler, newLambda, freeVariables, line)
 	if !isLambdaExpression {
-		check(compiler, TKRCurly)
+		check(compiler, tokRCurly)
 	}
 	paramsMap = nil
 	params = nil
@@ -1816,66 +1897,66 @@ func compileAnonymousFunction(compiler *Compiler, precedence byte) {
 	lambdaID++
 }
 
-func compileRange(compiler *Compiler, precedence byte) {
+func compileRange(compiler *compiler, precedence byte) {
 	line := compiler.token.Line
 	forward(compiler)
-	compileExpression(compiler, PrecedenceNone)
+	compileExpression(compiler, precedenceNone)
 	argCount := Bytecode(1)
-	if compiler.next.Type == TKComma {
+	if compiler.next.Type == tokComma {
 		forward(compiler)
-		check(compiler, TKComma)
+		check(compiler, tokComma)
 		forward(compiler)
-		compileExpression(compiler, PrecedenceNone)
+		compileExpression(compiler, precedenceNone)
 		argCount++
-		if compiler.next.Type == TKComma {
+		if compiler.next.Type == tokComma {
 			forward(compiler)
-			check(compiler, TKComma)
+			check(compiler, tokComma)
 			forward(compiler)
-			compileExpression(compiler, PrecedenceNone)
+			compileExpression(compiler, precedenceNone)
 			argCount++
 		}
 	}
 	emitRange(compiler, argCount, line)
 }
 
-func compileRecord(compiler *Compiler, precedence byte) {
+func compileRecord(compiler *compiler, precedence byte) {
 	switch compiler.next.Type {
-	case TKRCurly:
+	case tokRCurly:
 		forward(compiler)
 		emitRecord(compiler, 0, compiler.token.Line)
 	default:
 		line := compiler.token.Line
 		length := Bytecode(0)
 		forward(compiler)
-		check(compiler, TKIdentifier)
+		check(compiler, tokIdentifier)
 		emitConstant(compiler, &String{Value: compiler.token.Description}, compiler.token.Line)
 		forward(compiler)
-		check(compiler, TKColon)
+		check(compiler, tokColon)
 		forward(compiler)
-		compileExpression(compiler, PrecedenceNone)
+		compileExpression(compiler, precedenceNone)
 		forward(compiler)
 		length += 2
-		for compiler.token.Type == TKComma {
+		for compiler.token.Type == tokComma {
 			forward(compiler)
-			check(compiler, TKIdentifier)
+			check(compiler, tokIdentifier)
 			emitConstant(compiler, &String{Value: compiler.token.Description}, compiler.token.Line)
 			forward(compiler)
-			check(compiler, TKColon)
+			check(compiler, tokColon)
 			forward(compiler)
-			compileExpression(compiler, PrecedenceNone)
+			compileExpression(compiler, precedenceNone)
 			forward(compiler)
 			length += 2
 		}
-		check(compiler, TKRCurly)
+		check(compiler, tokRCurly)
 		emitRecord(compiler, length, line)
 	}
 }
 
-func compilePrefix(compiler *Compiler, precedence byte) {
+func compilePrefix(compiler *compiler, precedence byte) {
 	operator := compiler.token.Type
 	line := compiler.token.Line
 	forward(compiler)
-	compileExpression(compiler, PrecedenceUnary)
+	compileExpression(compiler, precedenceUnary)
 	instruction := OPPrefix
 	instruction |= Bytecode(operator) << instructionShift
 	// |- OpCode -|- Operator -|
@@ -1883,7 +1964,7 @@ func compilePrefix(compiler *Compiler, precedence byte) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func compileBinary(compiler *Compiler, precedence byte) {
+func compileBinary(compiler *compiler, precedence byte) {
 	// Left associative operators.
 	operator := compiler.token.Type
 	line := compiler.token.Line
@@ -1897,7 +1978,7 @@ func compileBinary(compiler *Compiler, precedence byte) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func compileEqual(compiler *Compiler, precedence byte) {
+func compileEqual(compiler *compiler, precedence byte) {
 	// Left associative operators.
 	operator := compiler.token.Type
 	line := compiler.token.Line
@@ -1905,7 +1986,7 @@ func compileEqual(compiler *Compiler, precedence byte) {
 	forward(compiler)
 	compileExpression(compiler, operatorPrecedence)
 	// |- OpCode -|
-	if operator == TKEqual {
+	if operator == tokEqual {
 		compiler.function.Code = append(compiler.function.Code, OPEqual)
 	} else {
 		compiler.function.Code = append(compiler.function.Code, OPNotEqual)
@@ -1913,7 +1994,7 @@ func compileEqual(compiler *Compiler, precedence byte) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func compileNilChoice(compiler *Compiler, precedence byte) {
+func compileNilChoice(compiler *compiler, precedence byte) {
 	// Left associative operators.
 	operator := compiler.token.Type
 	line := compiler.token.Line
@@ -1926,7 +2007,7 @@ func compileNilChoice(compiler *Compiler, precedence byte) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func compilePower(compiler *Compiler, precedence byte) {
+func compilePower(compiler *compiler, precedence byte) {
 	// Right assosiative operators.
 	line := compiler.token.Line
 	operatorPrecedende := compiler.rules[compiler.token.Type].precedence
@@ -1939,49 +2020,49 @@ func compilePower(compiler *Compiler, precedence byte) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func compileCall(compiler *Compiler, precedence byte) {
+func compileCall(compiler *compiler, precedence byte) {
 	line := compiler.token.Line
 	forward(compiler)
 	argCount := Bytecode(0)
 	spread := Bytecode(0)
-	if compiler.token.Type != TKRParen {
-		if compiler.token.Type == TKIdentifier && compiler.next.Type == TKColon {
-			check(compiler, TKIdentifier)
+	if compiler.token.Type != tokRParen {
+		if compiler.token.Type == tokIdentifier && compiler.next.Type == tokColon {
+			check(compiler, tokIdentifier)
 			emitConstant(compiler, &String{Value: compiler.token.Description}, compiler.token.Line)
 			forward(compiler)
-			check(compiler, TKColon)
+			check(compiler, tokColon)
 			forward(compiler)
-			compileExpression(compiler, PrecedenceNone)
+			compileExpression(compiler, precedenceNone)
 			forward(compiler)
 			argCount += 2
-			for compiler.token.Type == TKComma {
+			for compiler.token.Type == tokComma {
 				forward(compiler)
-				check(compiler, TKIdentifier)
+				check(compiler, tokIdentifier)
 				emitConstant(compiler, &String{Value: compiler.token.Description}, compiler.token.Line)
 				forward(compiler)
-				check(compiler, TKColon)
+				check(compiler, tokColon)
 				forward(compiler)
-				compileExpression(compiler, PrecedenceNone)
+				compileExpression(compiler, precedenceNone)
 				forward(compiler)
 				argCount += 2
 			}
 		} else {
-			compileExpression(compiler, PrecedenceNone)
+			compileExpression(compiler, precedenceNone)
 			forward(compiler)
 			argCount++
-			if compiler.token.Type == TK3Dots {
-				check(compiler, TK3Dots)
+			if compiler.token.Type == tok3Dots {
+				check(compiler, tok3Dots)
 				forward(compiler)
 				spread = 1
 				goto emitCall
 			}
-			for compiler.token.Type == TKComma {
+			for compiler.token.Type == tokComma {
 				forward(compiler)
-				compileExpression(compiler, PrecedenceNone)
+				compileExpression(compiler, precedenceNone)
 				forward(compiler)
 				argCount++
-				if compiler.token.Type == TK3Dots {
-					check(compiler, TK3Dots)
+				if compiler.token.Type == tok3Dots {
+					check(compiler, tok3Dots)
 					forward(compiler)
 					spread = 1
 					goto emitCall
@@ -1990,61 +2071,61 @@ func compileCall(compiler *Compiler, precedence byte) {
 		}
 	}
 emitCall:
-	check(compiler, TKRParen)
+	check(compiler, tokRParen)
 	emitCall(compiler, argCount, spread, line)
 }
 
-func compileSelector(compiler *Compiler, precedence byte) {
+func compileSelector(compiler *compiler, precedence byte) {
 	// |- OpCode -|
 	line := compiler.token.Line
-	check(compiler, TKDot)
+	check(compiler, tokDot)
 	forward(compiler)
-	check(compiler, TKIdentifier)
+	check(compiler, tokIdentifier)
 	emitConstant(compiler, &String{Value: compiler.token.Description}, compiler.token.Line)
 	spread := Bytecode(0)
-	if compiler.next.Type == TKLParen {
+	if compiler.next.Type == tokLParen {
 		forward(compiler)
 		line := compiler.token.Line
 		forward(compiler)
 		argCount := Bytecode(0)
-		if compiler.token.Type != TKRParen {
-			if compiler.token.Type == TKIdentifier && compiler.next.Type == TKColon {
-				check(compiler, TKIdentifier)
+		if compiler.token.Type != tokRParen {
+			if compiler.token.Type == tokIdentifier && compiler.next.Type == tokColon {
+				check(compiler, tokIdentifier)
 				emitConstant(compiler, &String{Value: compiler.token.Description}, compiler.token.Line)
 				forward(compiler)
-				check(compiler, TKColon)
+				check(compiler, tokColon)
 				forward(compiler)
-				compileExpression(compiler, PrecedenceNone)
+				compileExpression(compiler, precedenceNone)
 				forward(compiler)
 				argCount += 2
-				for compiler.token.Type == TKComma {
+				for compiler.token.Type == tokComma {
 					forward(compiler)
-					check(compiler, TKIdentifier)
+					check(compiler, tokIdentifier)
 					emitConstant(compiler, &String{Value: compiler.token.Description}, compiler.token.Line)
 					forward(compiler)
-					check(compiler, TKColon)
+					check(compiler, tokColon)
 					forward(compiler)
-					compileExpression(compiler, PrecedenceNone)
+					compileExpression(compiler, precedenceNone)
 					forward(compiler)
 					argCount += 2
 				}
 			} else {
-				compileExpression(compiler, PrecedenceNone)
+				compileExpression(compiler, precedenceNone)
 				forward(compiler)
 				argCount++
-				if compiler.token.Type == TK3Dots {
-					check(compiler, TK3Dots)
+				if compiler.token.Type == tok3Dots {
+					check(compiler, tok3Dots)
 					forward(compiler)
 					spread = 1
 					goto emitInvoke
 				}
-				for compiler.token.Type == TKComma {
+				for compiler.token.Type == tokComma {
 					forward(compiler)
-					compileExpression(compiler, PrecedenceNone)
+					compileExpression(compiler, precedenceNone)
 					forward(compiler)
 					argCount++
-					if compiler.token.Type == TK3Dots {
-						check(compiler, TK3Dots)
+					if compiler.token.Type == tok3Dots {
+						check(compiler, tok3Dots)
 						forward(compiler)
 						spread = 1
 						goto emitInvoke
@@ -2053,17 +2134,17 @@ func compileSelector(compiler *Compiler, precedence byte) {
 			}
 		}
 	emitInvoke:
-		check(compiler, TKRParen)
+		check(compiler, tokRParen)
 		emitInvoke(compiler, argCount, spread, line)
 	} else {
 		instruction := OPSelect
-		instruction |= OnlyExpression << instructionShift // Flag to be used in mutating operations.
+		instruction |= onlyExpression << instructionShift // Flag to be used in mutating operations.
 		compiler.function.Code = append(compiler.function.Code, instruction)
 		compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 	}
 }
 
-func compileSubscript(compiler *Compiler, precedence byte) {
+func compileSubscript(compiler *compiler, precedence byte) {
 	// |- OpCode -|- Flag -|
 	// Where Flag means:
 	// OnlyExpression = [e]
@@ -2073,70 +2154,70 @@ func compileSubscript(compiler *Compiler, precedence byte) {
 	// OnlyColon = [:]
 	instruction := OPSubscript
 	line := compiler.token.Line
-	check(compiler, TKLBracket)
+	check(compiler, tokLBracket)
 	forward(compiler)
-	if compiler.token.Type == TKColon {
-		check(compiler, TKColon)
+	if compiler.token.Type == tokColon {
+		check(compiler, tokColon)
 		forward(compiler)
-		if compiler.token.Type == TKRBracket {
-			instruction |= OnlyColon << instructionShift // Flag indicating [:] operations.
+		if compiler.token.Type == tokRBracket {
+			instruction |= onlyColon << instructionShift // Flag indicating [:] operations.
 			goto assembleInst
 		}
-		compileExpression(compiler, PrecedenceNone)
+		compileExpression(compiler, precedenceNone)
 		forward(compiler)
-		instruction |= ColonExpr << instructionShift // Flag indicating [:e] operations.
+		instruction |= colonExpr << instructionShift // Flag indicating [:e] operations.
 		goto assembleInst
 	}
-	compileExpression(compiler, PrecedenceNone)
+	compileExpression(compiler, precedenceNone)
 	forward(compiler)
-	if compiler.token.Type == TKColon {
-		check(compiler, TKColon)
+	if compiler.token.Type == tokColon {
+		check(compiler, tokColon)
 		forward(compiler)
-		if compiler.token.Type == TKRBracket {
-			instruction |= ExprColon << instructionShift // Flag idicating [e:] operations.
+		if compiler.token.Type == tokRBracket {
+			instruction |= exprColon << instructionShift // Flag idicating [e:] operations.
 			goto assembleInst
 		}
-		compileExpression(compiler, PrecedenceNone)
+		compileExpression(compiler, precedenceNone)
 		forward(compiler)
-		instruction |= ExprColonExpr << instructionShift // Flag idicating [e:e] operations.
+		instruction |= exprColonExpr << instructionShift // Flag idicating [e:e] operations.
 		goto assembleInst
 	}
-	instruction |= OnlyExpression << instructionShift // Flag indicatign [e] operations.
+	instruction |= onlyExpression << instructionShift // Flag indicatign [e] operations.
 assembleInst:
-	check(compiler, TKRBracket)
+	check(compiler, tokRBracket)
 	compiler.function.Code = append(compiler.function.Code, instruction)
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func compileGroup(compiler *Compiler, precedence byte) {
-	check(compiler, TKLParen)
+func compileGroup(compiler *compiler, precedence byte) {
+	check(compiler, tokLParen)
 	forward(compiler)
-	compileExpression(compiler, PrecedenceNone)
+	compileExpression(compiler, precedenceNone)
 	forward(compiler)
-	check(compiler, TKRParen)
+	check(compiler, tokRParen)
 }
 
-func compileListOrMap(compiler *Compiler, precedence byte) {
-	check(compiler, TKLBracket)
+func compileListOrMap(compiler *compiler, precedence byte) {
+	check(compiler, tokLBracket)
 	switch compiler.next.Type {
-	case TKRBracket:
+	case tokRBracket:
 		// Empty List
 		forward(compiler)
 		emitList(compiler, 0, compiler.token.Line)
-	case TKColon:
+	case tokColon:
 		// Empty Map
 		forward(compiler)
 		forward(compiler)
-		check(compiler, TKRBracket)
+		check(compiler, tokRBracket)
 		emitMap(compiler, 0, compiler.token.Line)
-	case TKFor:
+	case tokFor:
 		line := compiler.token.Line
 		childCompiler := newChildCompiler(compiler)
 		beginScope(childCompiler)
 		emitList(childCompiler, 0, line)
-		addLocal(childCompiler, Token{Type: TKIdentifier, Description: comprehensionID, Line: line})
+		addLocal(childCompiler, token{Type: tokIdentifier, Description: comprehensionID, Line: line})
 		forward(childCompiler)
-		check(childCompiler, TKFor)
+		check(childCompiler, tokFor)
 		forward(childCompiler)
 		var jumpAddressCheck []int
 		var loopOffset []int
@@ -2146,71 +2227,71 @@ func compileListOrMap(compiler *Compiler, precedence byte) {
 		localLoopHelper = append(localLoopHelper, loopInfo{})
 		localLoopHelper[loopOffset[len(loopOffset)-1]].scopeDepth = childCompiler.scopeDepth
 		beginScope(childCompiler)
-		check(childCompiler, TKIdentifier)
-		compileNil(childCompiler, PrecedenceNone)
+		check(childCompiler, tokIdentifier)
+		compileNil(childCompiler, precedenceNone)
 		addLocal(childCompiler, childCompiler.token)
 		forward(childCompiler)
 		variableCount++
-		for childCompiler.token.Type == TKComma {
+		for childCompiler.token.Type == tokComma {
 			forward(childCompiler)
-			check(childCompiler, TKIdentifier)
-			compileNil(childCompiler, PrecedenceNone)
+			check(childCompiler, tokIdentifier)
+			compileNil(childCompiler, precedenceNone)
 			addLocal(childCompiler, childCompiler.token)
 			forward(childCompiler)
 			variableCount++
 		}
-		check(childCompiler, TKIn)
+		check(childCompiler, tokIn)
 		forward(childCompiler)
-		compileExpression(childCompiler, PrecedenceNone)
+		compileExpression(childCompiler, precedenceNone)
 		forward(childCompiler)
-		addLocal(childCompiler, Token{Type: TKIdentifier, Description: iteratorID, Line: childCompiler.token.Line})
+		addLocal(childCompiler, token{Type: tokIdentifier, Description: iteratorID, Line: childCompiler.token.Line})
 		localLoopHelper[loopOffset[len(loopOffset)-1]].loopAddress = Bytecode(len(childCompiler.function.Code))
 		jumpAddressCheck = append(jumpAddressCheck, emitNext(childCompiler, line))
 		if variableCount > 1 {
 			emitUnpackFor(childCompiler, variableCount, line)
 		}
-		for childCompiler.token.Type == TKFor {
-			check(childCompiler, TKFor)
+		for childCompiler.token.Type == tokFor {
+			check(childCompiler, tokFor)
 			forward(childCompiler)
 			variableCount := Bytecode(0)
 			loopOffset = append(loopOffset, len(localLoopHelper))
 			localLoopHelper = append(localLoopHelper, loopInfo{})
 			localLoopHelper[loopOffset[len(loopOffset)-1]].scopeDepth = childCompiler.scopeDepth
 			beginScope(childCompiler)
-			check(childCompiler, TKIdentifier)
-			compileNil(childCompiler, PrecedenceNone)
+			check(childCompiler, tokIdentifier)
+			compileNil(childCompiler, precedenceNone)
 			addLocal(childCompiler, childCompiler.token)
 			forward(childCompiler)
 			variableCount++
-			for childCompiler.token.Type == TKComma {
+			for childCompiler.token.Type == tokComma {
 				forward(childCompiler)
-				check(childCompiler, TKIdentifier)
-				compileNil(childCompiler, PrecedenceNone)
+				check(childCompiler, tokIdentifier)
+				compileNil(childCompiler, precedenceNone)
 				addLocal(childCompiler, childCompiler.token)
 				forward(childCompiler)
 				variableCount++
 			}
-			check(childCompiler, TKIn)
+			check(childCompiler, tokIn)
 			forward(childCompiler)
-			compileExpression(childCompiler, PrecedenceNone)
+			compileExpression(childCompiler, precedenceNone)
 			forward(childCompiler)
-			addLocal(childCompiler, Token{Type: TKIdentifier, Description: iteratorID, Line: childCompiler.token.Line})
+			addLocal(childCompiler, token{Type: tokIdentifier, Description: iteratorID, Line: childCompiler.token.Line})
 			localLoopHelper[loopOffset[len(loopOffset)-1]].loopAddress = Bytecode(len(childCompiler.function.Code))
 			jumpAddressCheck = append(jumpAddressCheck, emitNext(childCompiler, line))
 			if variableCount > 1 {
 				emitUnpackFor(childCompiler, variableCount, line)
 			}
 		}
-		if childCompiler.token.Type == TKIf {
-			check(childCompiler, TKIf)
+		if childCompiler.token.Type == tokIf {
+			check(childCompiler, tokIf)
 			forward(childCompiler)
-			compileExpression(childCompiler, PrecedenceNone)
+			compileExpression(childCompiler, precedenceNone)
 			forward(childCompiler)
 			jumpAddress := emitJumpIfFalse(childCompiler, line)
 			// Compile expression
-			check(childCompiler, TKRighArrow)
+			check(childCompiler, tokRArrow)
 			forward(childCompiler)
-			compileExpression(childCompiler, PrecedenceNone)
+			compileExpression(childCompiler, precedenceNone)
 			forward(childCompiler)
 			emitAppendList(childCompiler, Bytecode(resolveLocal(childCompiler, comprehensionID)), line)
 			childCompiler.function.Code[jumpAddress] |= Bytecode(len(childCompiler.function.Code)) << instructionShift
@@ -2237,9 +2318,9 @@ func compileListOrMap(compiler *Compiler, precedence byte) {
 			emitBuildClosure(compiler, newLambda, childCompiler.freeVariables, line)
 			lambdaID++
 		} else {
-			check(childCompiler, TKRighArrow)
+			check(childCompiler, tokRArrow)
 			forward(childCompiler)
-			compileExpression(childCompiler, PrecedenceNone)
+			compileExpression(childCompiler, precedenceNone)
 			forward(childCompiler)
 			emitAppendList(childCompiler, Bytecode(resolveLocal(childCompiler, comprehensionID)), line)
 			for i := len(jumpAddressCheck) - 1; i >= 0; i-- {
@@ -2265,7 +2346,7 @@ func compileListOrMap(compiler *Compiler, precedence byte) {
 			emitBuildClosure(compiler, newLambda, childCompiler.freeVariables, line)
 			lambdaID++
 		}
-		check(compiler, TKRBracket)
+		check(compiler, tokRBracket)
 		emitCall(compiler, 0, 0, line)
 		jumpAddressCheck = nil
 		loopOffset = nil
@@ -2274,37 +2355,37 @@ func compileListOrMap(compiler *Compiler, precedence byte) {
 		line := compiler.token.Line
 		length := Bytecode(0)
 		forward(compiler)
-		compileExpression(compiler, PrecedenceNone)
+		compileExpression(compiler, precedenceNone)
 		forward(compiler)
 		length++
 		switch compiler.token.Type {
-		case TKComma:
-			for compiler.token.Type == TKComma {
+		case tokComma:
+			for compiler.token.Type == tokComma {
 				forward(compiler)
-				compileExpression(compiler, PrecedenceNone)
-				forward(compiler)
-				length++
-			}
-			check(compiler, TKRBracket)
-			emitList(compiler, length, line)
-		case TKRBracket:
-			check(compiler, TKRBracket)
-			emitList(compiler, length, line)
-		case TKColon:
-			forward(compiler)
-			compileExpression(compiler, PrecedenceNone)
-			forward(compiler)
-			for compiler.token.Type == TKComma {
-				forward(compiler)
-				compileExpression(compiler, PrecedenceNone)
-				forward(compiler)
-				check(compiler, TKColon)
-				forward(compiler)
-				compileExpression(compiler, PrecedenceNone)
+				compileExpression(compiler, precedenceNone)
 				forward(compiler)
 				length++
 			}
-			check(compiler, TKRBracket)
+			check(compiler, tokRBracket)
+			emitList(compiler, length, line)
+		case tokRBracket:
+			check(compiler, tokRBracket)
+			emitList(compiler, length, line)
+		case tokColon:
+			forward(compiler)
+			compileExpression(compiler, precedenceNone)
+			forward(compiler)
+			for compiler.token.Type == tokComma {
+				forward(compiler)
+				compileExpression(compiler, precedenceNone)
+				forward(compiler)
+				check(compiler, tokColon)
+				forward(compiler)
+				compileExpression(compiler, precedenceNone)
+				forward(compiler)
+				length++
+			}
+			check(compiler, tokRBracket)
 			emitMap(compiler, length, line)
 		default:
 			compilerPrintError("Expression", compiler.token, compiler.lexer.fileName)
@@ -2312,19 +2393,19 @@ func compileListOrMap(compiler *Compiler, precedence byte) {
 	}
 }
 
-func check(compiler *Compiler, tKind byte) {
+func check(compiler *compiler, tKind byte) {
 	if compiler.token.Type != tKind {
 		unexpectedTokenError(tKind, compiler.token, compiler.lexer.fileName)
 	}
 }
 
 // forward update the compiler's state with the next token ahead.
-func forward(compiler *Compiler) {
+func forward(compiler *compiler) {
 	compiler.token = compiler.next
 	compiler.next = compiler.lexer.nextToken()
 }
 
-func unexpectedTokenError(expected byte, found Token, script string) {
+func unexpectedTokenError(expected byte, found token, script string) {
 	if len(found.Description) == 0 {
 		fmt.Printf("\n   Syntax Error\n   Expected '%v' but got Token '%v'\n   %v:%3v\n\n", KindDescription[expected], KindDescription[found.Type], script, found.Line)
 	} else {
@@ -2333,7 +2414,7 @@ func unexpectedTokenError(expected byte, found Token, script string) {
 	os.Exit(0)
 }
 
-func compilerPrintError(expected string, found Token, script string) {
+func compilerPrintError(expected string, found token, script string) {
 	if len(found.Description) == 0 {
 		fmt.Printf("\n   Syntax Error\n   Expected %v but got Token '%v'\n   %v:%3v\n\n", expected, KindDescription[found.Type], script, found.Line)
 	} else {
@@ -2342,22 +2423,22 @@ func compilerPrintError(expected string, found Token, script string) {
 	os.Exit(0)
 }
 
-func argumentError(found Token, script string) {
+func argumentError(found token, script string) {
 	fmt.Printf("\n   Syntax Error\n   Function and param identifiers must be different\n   %v:%3v\n\n", script, found.Line)
 	os.Exit(0)
 }
 
-func redefinedField(found Token, script string) {
+func redefinedField(found token, script string) {
 	fmt.Printf("\n   Semantic Error\n   The name '%v' has already been defined in the Type/Extension context\n   %v:%3v\n\n", found.Description, script, found.Line)
 	os.Exit(0)
 }
 
-func redefinedLocalError(found Token, script string) {
+func redefinedLocalError(found token, script string) {
 	fmt.Printf("\n   Syntax Error\n   Redefined local variable '%v'\n   %v:%3v\n\n", found.Description, script, found.Line)
 	os.Exit(0)
 }
 
-func labelError(found Token, script string) {
+func labelError(found token, script string) {
 	fmt.Printf("\n   Syntax Error\n   Label '%v' not defined\n   %v:%3v\n\n", found.Description, script, found.Line)
 	os.Exit(0)
 }
@@ -2404,7 +2485,7 @@ func numberError(numberDescription string, line UInt32, script string) {
 	os.Exit(0)
 }
 
-func emitConstant(compiler *Compiler, value Value, line UInt32) {
+func emitConstant(compiler *compiler, value Value, line UInt32) {
 	// |- OpCode -|- kIndex -|
 	if compiler.kIndex < maxConstants {
 		instruction := OPConst
@@ -2418,7 +2499,7 @@ func emitConstant(compiler *Compiler, value Value, line UInt32) {
 	}
 }
 
-func appendValue(compiler *Compiler, value Value) Bytecode {
+func appendValue(compiler *compiler, value Value) Bytecode {
 	if compiler.kIndex < maxConstants {
 		compiler.function.Constants = append(compiler.function.Constants, value)
 		index := compiler.kIndex
@@ -2429,7 +2510,7 @@ func appendValue(compiler *Compiler, value Value) Bytecode {
 	return 0
 }
 
-func emitClosure(compiler *Compiler, index Bytecode, line UInt32, collect bool) {
+func emitClosure(compiler *compiler, index Bytecode, line UInt32, collect bool) {
 	// |- OpCode -|- kIndex -|- Collect FreeVars -|
 	instruction := OPClosure
 	instruction |= index << instructionShift
@@ -2442,7 +2523,7 @@ func emitClosure(compiler *Compiler, index Bytecode, line UInt32, collect bool) 
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitBuildStruct(compiler *Compiler, stuffCount Bytecode, line UInt32) {
+func emitBuildStruct(compiler *compiler, stuffCount Bytecode, line UInt32) {
 	// |- OpCode -|- stuffCount -|
 	instruction := OPStruct
 	instruction |= stuffCount << instructionShift
@@ -2450,7 +2531,7 @@ func emitBuildStruct(compiler *Compiler, stuffCount Bytecode, line UInt32) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitExtension(compiler *Compiler, methodsCount, StructCount Bytecode, line UInt32) {
+func emitExtension(compiler *compiler, methodsCount, StructCount Bytecode, line UInt32) {
 	// |- OpCode -|- methodsCount -|- StructCount -|
 	instruction := OPExtension
 	instruction |= methodsCount << instructionShift
@@ -2459,7 +2540,7 @@ func emitExtension(compiler *Compiler, methodsCount, StructCount Bytecode, line 
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitDerive(compiler *Compiler, deriveCount Bytecode, line UInt32) {
+func emitDerive(compiler *compiler, deriveCount Bytecode, line UInt32) {
 	// |- OpCode -|- DeriveCount -|
 	instruction := OPDerive
 	instruction |= deriveCount << instructionShift
@@ -2467,7 +2548,7 @@ func emitDerive(compiler *Compiler, deriveCount Bytecode, line UInt32) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitList(compiler *Compiler, length, line UInt32) {
+func emitList(compiler *compiler, length, line UInt32) {
 	// |- OpCode -|- Length -|
 	instruction := OPList
 	instruction |= length << instructionShift
@@ -2475,7 +2556,7 @@ func emitList(compiler *Compiler, length, line UInt32) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitMap(compiler *Compiler, length, line UInt32) {
+func emitMap(compiler *compiler, length, line UInt32) {
 	// |- OpCode -|- Length -|
 	instruction := OPMap
 	instruction |= (length * 2) << instructionShift
@@ -2483,7 +2564,7 @@ func emitMap(compiler *Compiler, length, line UInt32) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitRecord(compiler *Compiler, length, line UInt32) {
+func emitRecord(compiler *compiler, length, line UInt32) {
 	// |- OpCode -|- Length -|
 	instruction := OPRecord
 	instruction |= length << instructionShift
@@ -2491,7 +2572,7 @@ func emitRecord(compiler *Compiler, length, line UInt32) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitConstantNamespace(compiler *Compiler, constCount, line UInt32) {
+func emitConstantNamespace(compiler *compiler, constCount, line UInt32) {
 	// |- OpCode -|- ConstCount -|
 	instruction := OPConstNamespace
 	instruction |= constCount << instructionShift
@@ -2499,7 +2580,7 @@ func emitConstantNamespace(compiler *Compiler, constCount, line UInt32) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitNewGlobal(compiler *Compiler, gIndex Bytecode, line UInt32) {
+func emitNewGlobal(compiler *compiler, gIndex Bytecode, line UInt32) {
 	// |- OpCode -|- Global Index-|
 	if gIndex < maxGlobals {
 		instruction := OPNewGlobal
@@ -2511,7 +2592,7 @@ func emitNewGlobal(compiler *Compiler, gIndex Bytecode, line UInt32) {
 	}
 }
 
-func emitGetGlobal(compiler *Compiler, gIndex, line UInt32) {
+func emitGetGlobal(compiler *compiler, gIndex, line UInt32) {
 	// |- OpCode -|- Global Index -|
 	instruction := OPGetGlobal
 	instruction |= gIndex << instructionShift
@@ -2519,7 +2600,7 @@ func emitGetGlobal(compiler *Compiler, gIndex, line UInt32) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitSetGlobal(compiler *Compiler, gIndex, line UInt32) {
+func emitSetGlobal(compiler *compiler, gIndex, line UInt32) {
 	// |- OpCode -|- Global Index -|
 	instruction := OPSetGlobal
 	instruction |= gIndex << instructionShift
@@ -2527,7 +2608,7 @@ func emitSetGlobal(compiler *Compiler, gIndex, line UInt32) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitCompoundSetGlobal(compiler *Compiler, gIndex, line UInt32, operatorCode Bytecode) {
+func emitCompoundSetGlobal(compiler *compiler, gIndex, line UInt32, operatorCode Bytecode) {
 	// |- OpCode -|- Global Index -|- operator -|
 	instruction := OPCompSetGlobal
 	instruction |= gIndex << instructionShift
@@ -2536,7 +2617,7 @@ func emitCompoundSetGlobal(compiler *Compiler, gIndex, line UInt32, operatorCode
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitMutDataStructure(compiler *Compiler, relativeIndex, flag, mutatingOperatorType, line UInt32) {
+func emitMutDataStructure(compiler *compiler, relativeIndex, flag, mutatingOperatorType, line UInt32) {
 	// |- OpCode -|- Relative Expr Index -|- Flag -|- mutatingOperatorType -|
 	// 1 - [e]
 	// 2 - [e:e]
@@ -2551,7 +2632,7 @@ func emitMutDataStructure(compiler *Compiler, relativeIndex, flag, mutatingOpera
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitCompoundMutDataStructure(compiler *Compiler, relativeIndex, line UInt32, operatorCode, selectorType, flag Bytecode) {
+func emitCompoundMutDataStructure(compiler *compiler, relativeIndex, line UInt32, operatorCode, selectorType, flag Bytecode) {
 	// |- OpCode 8 bits -|- Relative Expr Index 16 bits -|- operator 8 bits tokens(19-29) (add, sub, etc) -|
 	// |- Flag 8 bits -|- Selector Type 1 bit (0-1) ([], .) -|
 	// Where Flag means:
@@ -2571,7 +2652,7 @@ func emitCompoundMutDataStructure(compiler *Compiler, relativeIndex, line UInt32
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitJumpIfFalse(compiler *Compiler, line UInt32) int {
+func emitJumpIfFalse(compiler *compiler, line UInt32) int {
 	// |- OpCode -|- Jump Address -|
 	instruction := OPJumpIfFalse
 	compiler.function.Code = append(compiler.function.Code, instruction)
@@ -2579,7 +2660,7 @@ func emitJumpIfFalse(compiler *Compiler, line UInt32) int {
 	return len(compiler.function.Code) - 1
 }
 
-func emitJump(compiler *Compiler, line UInt32) int {
+func emitJump(compiler *compiler, line UInt32) int {
 	// |- OpCode -|- Jump Address -|
 	instruction := OPGoto
 	compiler.function.Code = append(compiler.function.Code, instruction)
@@ -2587,11 +2668,11 @@ func emitJump(compiler *Compiler, line UInt32) int {
 	return len(compiler.function.Code) - 1
 }
 
-func beginScope(compiler *Compiler) {
+func beginScope(compiler *compiler) {
 	compiler.scopeDepth++
 }
 
-func endScope(compiler *Compiler) Bytecode {
+func endScope(compiler *compiler) Bytecode {
 	compiler.scopeDepth--
 	offset := 0
 	for i := len(compiler.locals) - 1; i >= 0; i-- {
@@ -2603,7 +2684,7 @@ func endScope(compiler *Compiler) Bytecode {
 	return Bytecode(offset)
 }
 
-func countLocalsUpTo(compiler *Compiler, depth Int32) Bytecode {
+func countLocalsUpTo(compiler *compiler, depth Int32) Bytecode {
 	offset := 0
 	for i := len(compiler.locals) - 1; i >= 0; i-- {
 		if compiler.locals[i].depth > depth {
@@ -2613,7 +2694,7 @@ func countLocalsUpTo(compiler *Compiler, depth Int32) Bytecode {
 	return Bytecode(offset)
 }
 
-func addLocal(compiler *Compiler, token Token) {
+func addLocal(compiler *compiler, token token) {
 	if len(compiler.locals) < maxLocals {
 		for i := len(compiler.locals) - 1; i >= 0; i-- {
 			if compiler.locals[i].depth != -1 && compiler.locals[i].depth < compiler.scopeDepth {
@@ -2623,13 +2704,13 @@ func addLocal(compiler *Compiler, token Token) {
 				redefinedLocalError(token, compiler.lexer.fileName)
 			}
 		}
-		compiler.locals = append(compiler.locals, Local{identifier: token.Description, depth: compiler.scopeDepth})
+		compiler.locals = append(compiler.locals, localVariable{identifier: token.Description, depth: compiler.scopeDepth})
 		return
 	}
 	maxLocalsError(compiler.lexer.fileName)
 }
 
-func emitGetLocal(compiler *Compiler, localIndex, line UInt32) {
+func emitGetLocal(compiler *compiler, localIndex, line UInt32) {
 	// |- OpCode -|- Local Index-|
 	instruction := OPGetLocal
 	instruction |= localIndex << instructionShift
@@ -2637,7 +2718,7 @@ func emitGetLocal(compiler *Compiler, localIndex, line UInt32) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitSetLocal(compiler *Compiler, localIndex, line UInt32) {
+func emitSetLocal(compiler *compiler, localIndex, line UInt32) {
 	// |- OpCode -|- Local Index-|
 	instruction := OPSetLocal
 	instruction |= localIndex << instructionShift
@@ -2645,7 +2726,7 @@ func emitSetLocal(compiler *Compiler, localIndex, line UInt32) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitCompoundSetLocal(compiler *Compiler, localIndex, line UInt32, operatorCode Bytecode) {
+func emitCompoundSetLocal(compiler *compiler, localIndex, line UInt32, operatorCode Bytecode) {
 	// |- OpCode -|- Local Index-|- operator -|
 	instruction := OPCompSetLocal
 	instruction |= localIndex << instructionShift
@@ -2654,7 +2735,7 @@ func emitCompoundSetLocal(compiler *Compiler, localIndex, line UInt32, operatorC
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func resolveLocal(compiler *Compiler, identifier string) Int32 {
+func resolveLocal(compiler *compiler, identifier string) Int32 {
 	for i := len(compiler.locals) - 1; i >= 0; i-- {
 		if compiler.locals[i].identifier == identifier {
 			return Int32(i)
@@ -2663,7 +2744,7 @@ func resolveLocal(compiler *Compiler, identifier string) Int32 {
 	return -1
 }
 
-func resolveFreeVar(compiler *Compiler, identifier string, line UInt32) Int32 {
+func resolveFreeVar(compiler *compiler, identifier string, line UInt32) Int32 {
 	if compiler.parent == nil {
 		return -1
 	}
@@ -2676,7 +2757,7 @@ func resolveFreeVar(compiler *Compiler, identifier string, line UInt32) Int32 {
 	return -1
 }
 
-func addFreeVar(compiler *Compiler, index, line UInt32, isLocal bool) Int32 {
+func addFreeVar(compiler *compiler, index, line UInt32, isLocal bool) Int32 {
 	if len(compiler.freeVariables) < maxFreeVars {
 		for i := Bytecode(0); i < compiler.function.FreeVarCount; i++ {
 			freeVar := compiler.freeVariables[i]
@@ -2685,7 +2766,7 @@ func addFreeVar(compiler *Compiler, index, line UInt32, isLocal bool) Int32 {
 			}
 		}
 		upIndex := len(compiler.freeVariables)
-		compiler.freeVariables = append(compiler.freeVariables, CompFreeVar{index: index, isLocal: isLocal})
+		compiler.freeVariables = append(compiler.freeVariables, freeVar{index: index, isLocal: isLocal})
 		compiler.function.FreeVarCount++
 		return Int32(upIndex)
 	}
@@ -2693,7 +2774,7 @@ func addFreeVar(compiler *Compiler, index, line UInt32, isLocal bool) Int32 {
 	return 0
 }
 
-func emitFreeVar(compiler *Compiler, index, line UInt32, isLocal bool) {
+func emitFreeVar(compiler *compiler, index, line UInt32, isLocal bool) {
 	// |- OpCode -|- index -|- isLocal -|
 	instruction := OPFreeVariable
 	instruction |= index << instructionShift
@@ -2706,7 +2787,7 @@ func emitFreeVar(compiler *Compiler, index, line UInt32, isLocal bool) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitGetFreeVar(compiler *Compiler, index, line UInt32) {
+func emitGetFreeVar(compiler *compiler, index, line UInt32) {
 	// |- OpCode -|- Local Index -|
 	instruction := OPGetFreeVariable
 	instruction |= index << instructionShift
@@ -2714,7 +2795,7 @@ func emitGetFreeVar(compiler *Compiler, index, line UInt32) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitSetFreeVar(compiler *Compiler, index, line UInt32) {
+func emitSetFreeVar(compiler *compiler, index, line UInt32) {
 	// |- OpCode -|- FreeVar Index -|
 	instruction := OPSetFreeVariable
 	instruction |= index << instructionShift
@@ -2722,7 +2803,7 @@ func emitSetFreeVar(compiler *Compiler, index, line UInt32) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitCompoundSetFreeVar(compiler *Compiler, index, line UInt32, operatorCode Bytecode) {
+func emitCompoundSetFreeVar(compiler *compiler, index, line UInt32, operatorCode Bytecode) {
 	// |- OpCode -|- FreeVar Index -|- operator code -|
 	instruction := OPCompSetFreeVariable
 	instruction |= index << instructionShift
@@ -2731,7 +2812,7 @@ func emitCompoundSetFreeVar(compiler *Compiler, index, line UInt32, operatorCode
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitRange(compiler *Compiler, argCount, line Bytecode) {
+func emitRange(compiler *compiler, argCount, line Bytecode) {
 	// |- OpCode -|- ArgCount -|
 	instruction := OPRange
 	instruction |= argCount << instructionShift
@@ -2739,7 +2820,7 @@ func emitRange(compiler *Compiler, argCount, line Bytecode) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitNext(compiler *Compiler, line UInt32) int {
+func emitNext(compiler *compiler, line UInt32) int {
 	// |- OpCode -|- JumpAddress -|
 	instruction := OPNext
 	compiler.function.Code = append(compiler.function.Code, instruction)
@@ -2747,7 +2828,7 @@ func emitNext(compiler *Compiler, line UInt32) int {
 	return len(compiler.function.Code) - 1
 }
 
-func emitMatch(compiler *Compiler, line UInt32) int {
+func emitMatch(compiler *compiler, line UInt32) int {
 	// |- OpCode -|- Jumpt Address if match -|
 	instruction := OPMatch
 	compiler.function.Code = append(compiler.function.Code, instruction)
@@ -2755,7 +2836,7 @@ func emitMatch(compiler *Compiler, line UInt32) int {
 	return len(compiler.function.Code) - 1
 }
 
-func emitCall(compiler *Compiler, argCount, spread, line UInt32) {
+func emitCall(compiler *compiler, argCount, spread, line UInt32) {
 	// |- OpCode -|- ArgCount -|- SpreadFlag -|
 	instruction := OPCall
 	instruction |= argCount << instructionShift
@@ -2764,7 +2845,7 @@ func emitCall(compiler *Compiler, argCount, spread, line UInt32) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitInvoke(compiler *Compiler, argCount, spread, line UInt32) {
+func emitInvoke(compiler *compiler, argCount, spread, line UInt32) {
 	// |- OpCode -|- ArgCount -|- SpreadFlag -|
 	instruction := OPInvokeMethod
 	instruction |= argCount << instructionShift
@@ -2773,7 +2854,7 @@ func emitInvoke(compiler *Compiler, argCount, spread, line UInt32) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitReturn(compiler *Compiler, lengthReturnedvalues, line UInt32) {
+func emitReturn(compiler *compiler, lengthReturnedvalues, line UInt32) {
 	// |- OpCode -|- Number elements to return -|
 	instruction := OPReturn
 	instruction |= lengthReturnedvalues << instructionShift
@@ -2781,7 +2862,7 @@ func emitReturn(compiler *Compiler, lengthReturnedvalues, line UInt32) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitUnpack(compiler *Compiler, idCount, line UInt32) {
+func emitUnpack(compiler *compiler, idCount, line UInt32) {
 	// |- OpCode -|- TokensCount -|
 	instruction := OPUnpack
 	instruction |= idCount << instructionShift
@@ -2789,7 +2870,7 @@ func emitUnpack(compiler *Compiler, idCount, line UInt32) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitUnpackFor(compiler *Compiler, idCount, line UInt32) {
+func emitUnpackFor(compiler *compiler, idCount, line UInt32) {
 	// |- OpCode -|- TokensCount -|
 	instruction := OPUnpackFor
 	instruction |= idCount << instructionShift
@@ -2797,7 +2878,7 @@ func emitUnpackFor(compiler *Compiler, idCount, line UInt32) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitNilReturn(compiler *Compiler, line UInt32) {
+func emitNilReturn(compiler *compiler, line UInt32) {
 	// |- OpCode -|- Number elements to return -|
 	compiler.function.Code = append(compiler.function.Code, OPNil)
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
@@ -2807,7 +2888,7 @@ func emitNilReturn(compiler *Compiler, line UInt32) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitAppendList(compiler *Compiler, listAddress Bytecode, line UInt32) {
+func emitAppendList(compiler *compiler, listAddress Bytecode, line UInt32) {
 	// |- OpCode -|- ListAddress -|
 	instruction := OPAppend
 	instruction |= listAddress << instructionShift
@@ -2815,7 +2896,7 @@ func emitAppendList(compiler *Compiler, listAddress Bytecode, line UInt32) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = line
 }
 
-func emitEndScript(compiler *Compiler, line UInt32) {
+func emitEndScript(compiler *compiler, line UInt32) {
 	if compiler.hasDefer {
 		// |- OpCode -|
 		instruction := OPRunDefer
@@ -2827,7 +2908,7 @@ func emitEndScript(compiler *Compiler, line UInt32) {
 	compiler.function.Lines[Bytecode(len(compiler.function.Code)-1)] = compiler.token.Line
 }
 
-func emitPop(compiler *Compiler, count, line UInt32) {
+func emitPop(compiler *compiler, count, line UInt32) {
 	// |- OpCode -|
 	instruction := OPPop
 	instruction |= count << instructionShift
@@ -2850,7 +2931,7 @@ func newDeferLambda(argCount Bytecode, modName string, line UInt32, opcode Bytec
 	return Closure{Function: &newLambda}
 }
 
-func cleanUp(compiler *Compiler) {
+func cleanUp(compiler *compiler) {
 	compiler.lexer.input = nil
 	compiler.lexer = nil
 	compiler.gIDPos = nil
@@ -2858,86 +2939,86 @@ func cleanUp(compiler *Compiler) {
 	compiler.rules = nil
 }
 
-func createRules() []ParseRule {
-	return []ParseRule{
-		TKEof:             {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKComment:         {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKLet:             {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKIf:              {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKElse:            {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKFor:             {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKIn:              {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKRange:           {prefix: compileRange, infix: nil, precedence: PrecedenceNone},
-		TKBreak:           {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKContinue:        {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKSwitch:          {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKCase:            {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKDefault:         {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKLabel:           {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKFunction:        {prefix: compileAnonymousFunction, infix: nil, precedence: PrecedenceNone},
-		TKReturn:          {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKIdentifier:      {prefix: compileIdentifier, infix: nil, precedence: PrecedenceNone},
-		TKEquation:        {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKInteger:         {prefix: compileInteger, infix: nil, precedence: PrecedenceNone},
-		TKUInt:            {prefix: compileUInt, infix: nil, precedence: PrecedenceNone},
-		TKBig:             {prefix: compileBig, infix: nil, precedence: PrecedenceNone},
-		TKFloat:           {prefix: compileFloat, infix: nil, precedence: PrecedenceNone},
-		TKRational:        {prefix: compileRational, infix: nil, precedence: PrecedenceNone},
-		TKComplex:         {prefix: compileComplex, infix: nil, precedence: PrecedenceNone},
-		TKTrue:            {prefix: compileTrue, infix: nil, precedence: PrecedenceNone},
-		TKFalse:           {prefix: compileFalse, infix: nil, precedence: PrecedenceNone},
-		TKNil:             {prefix: compileNil, infix: nil, precedence: PrecedenceNone},
-		TKRune:            {prefix: compileRune, infix: nil, precedence: PrecedenceNone},
-		TKString:          {prefix: compileString, infix: nil, precedence: PrecedenceNone},
-		TK3Dots:           {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKAdd:             {prefix: compilePrefix, infix: compileBinary, precedence: PrecedenceAdditive},
-		TKMinus:           {prefix: compilePrefix, infix: compileBinary, precedence: PrecedenceAdditive},
-		TKMul:             {prefix: nil, infix: compileBinary, precedence: PrecedenceMultiplicative},
-		TKDiv:             {prefix: nil, infix: compileBinary, precedence: PrecedenceMultiplicative},
-		TKMod:             {prefix: nil, infix: compileBinary, precedence: PrecedenceMultiplicative},
-		TKPercent:         {prefix: nil, infix: compileBinary, precedence: PrecedenceMultiplicative},
-		TKPower:           {prefix: nil, infix: compilePower, precedence: PrecedenceExp},
-		TKAmpersand:       {prefix: nil, infix: compileBinary, precedence: PrecedenceBitAnd},
-		TKBar:             {prefix: nil, infix: compileBinary, precedence: PrecedenceBitOr},
-		TKHat:             {prefix: nil, infix: compileBinary, precedence: PrecedenceBitXor},
-		TKLShift:          {prefix: nil, infix: compileBinary, precedence: PrecedenceShift},
-		TKRShift:          {prefix: nil, infix: compileBinary, precedence: PrecedenceShift},
-		TKEqual:           {prefix: nil, infix: compileEqual, precedence: PrecedenceEquality},
-		TKNEqual:          {prefix: nil, infix: compileEqual, precedence: PrecedenceEquality},
-		TKGT:              {prefix: nil, infix: compileBinary, precedence: PrecedenceRelational},
-		TKGE:              {prefix: nil, infix: compileBinary, precedence: PrecedenceRelational},
-		TKLT:              {prefix: nil, infix: compileBinary, precedence: PrecedenceRelational},
-		TKLE:              {prefix: nil, infix: compileBinary, precedence: PrecedenceRelational},
-		TKAnd:             {prefix: nil, infix: compileBinary, precedence: PrecedenceAnd},
-		TKOr:              {prefix: nil, infix: compileBinary, precedence: PrecedenceOr},
-		TKNot:             {prefix: compilePrefix, infix: nil, precedence: PrecedenceNone},
-		TKTilde:           {prefix: compilePrefix, infix: nil, precedence: PrecedenceNone},
-		TKComma:           {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKColon:           {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKDot:             {prefix: nil, infix: compileSelector, precedence: PrecedencePosfix},
-		TKLParen:          {prefix: compileGroup, infix: compileCall, precedence: PrecedencePosfix},
-		TKRParen:          {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKLBracket:        {prefix: compileListOrMap, infix: compileSubscript, precedence: PrecedencePosfix},
-		TKRBracket:        {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKLCurly:          {prefix: compileRecord, infix: nil, precedence: PrecedenceNone},
-		TKRCurly:          {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKQuestion:        {prefix: nil, infix: compileNilChoice, precedence: PrecedenceNilChoice},
-		TKRighArrow:       {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKStruct:          {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKPublic:          {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKExtension:       {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKDefer:           {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKAddAssign:       {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKSubAssign:       {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKMulAssign:       {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKDivAssign:       {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKRemAssign:       {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKPowAssign:       {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKBitAndAssign:    {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKBitOrAssign:     {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKBitXorAssign:    {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKBitLShiftAssign: {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKBitRShiftAssign: {prefix: nil, infix: nil, precedence: PrecedenceNone},
-		TKUndefined:       {prefix: nil, infix: nil, precedence: PrecedenceNone},
+func createRules() []parseRule {
+	return []parseRule{
+		tokEOF:             {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokComment:         {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokLet:             {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokIf:              {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokElse:            {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokFor:             {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokIn:              {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokRange:           {prefix: compileRange, infix: nil, precedence: precedenceNone},
+		tokBreak:           {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokContinue:        {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokSwitch:          {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokCase:            {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokDefault:         {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokLabel:           {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokFunction:        {prefix: compileAnonymousFunction, infix: nil, precedence: precedenceNone},
+		tokReturn:          {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokIdentifier:      {prefix: compileIdentifier, infix: nil, precedence: precedenceNone},
+		tokEquation:        {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokInteger:         {prefix: compileInteger, infix: nil, precedence: precedenceNone},
+		tokUInt:            {prefix: compileUInt, infix: nil, precedence: precedenceNone},
+		tokBig:             {prefix: compileBig, infix: nil, precedence: precedenceNone},
+		tokFloat:           {prefix: compileFloat, infix: nil, precedence: precedenceNone},
+		tokRational:        {prefix: compileRational, infix: nil, precedence: precedenceNone},
+		tokComplex:         {prefix: compileComplex, infix: nil, precedence: precedenceNone},
+		tokTrue:            {prefix: compileTrue, infix: nil, precedence: precedenceNone},
+		tokFalse:           {prefix: compileFalse, infix: nil, precedence: precedenceNone},
+		tokNil:             {prefix: compileNil, infix: nil, precedence: precedenceNone},
+		tokRune:            {prefix: compileRune, infix: nil, precedence: precedenceNone},
+		tokString:          {prefix: compileString, infix: nil, precedence: precedenceNone},
+		tok3Dots:           {prefix: nil, infix: nil, precedence: precedenceNone},
+		TKAdd:              {prefix: compilePrefix, infix: compileBinary, precedence: precedenceAdditive},
+		TKMinus:            {prefix: compilePrefix, infix: compileBinary, precedence: precedenceAdditive},
+		TKMul:              {prefix: nil, infix: compileBinary, precedence: precedenceMultiplicative},
+		TKDiv:              {prefix: nil, infix: compileBinary, precedence: precedenceMultiplicative},
+		TKMod:              {prefix: nil, infix: compileBinary, precedence: precedenceMultiplicative},
+		TKPercent:          {prefix: nil, infix: compileBinary, precedence: precedenceMultiplicative},
+		TKPower:            {prefix: nil, infix: compilePower, precedence: precedenceExp},
+		TKAmpersand:        {prefix: nil, infix: compileBinary, precedence: precedenceBitAnd},
+		TKBar:              {prefix: nil, infix: compileBinary, precedence: precedenceBitOr},
+		TKHat:              {prefix: nil, infix: compileBinary, precedence: precedenceBitXor},
+		TKLShift:           {prefix: nil, infix: compileBinary, precedence: precedenceShift},
+		TKRShift:           {prefix: nil, infix: compileBinary, precedence: precedenceShift},
+		tokEqual:           {prefix: nil, infix: compileEqual, precedence: precedenceEquality},
+		tokNEqual:          {prefix: nil, infix: compileEqual, precedence: precedenceEquality},
+		TKGT:               {prefix: nil, infix: compileBinary, precedence: precedenceRelational},
+		TKGE:               {prefix: nil, infix: compileBinary, precedence: precedenceRelational},
+		TKLT:               {prefix: nil, infix: compileBinary, precedence: precedenceRelational},
+		TKLE:               {prefix: nil, infix: compileBinary, precedence: precedenceRelational},
+		TKAnd:              {prefix: nil, infix: compileBinary, precedence: precedenceAnd},
+		TKOr:               {prefix: nil, infix: compileBinary, precedence: precedenceOr},
+		TKNot:              {prefix: compilePrefix, infix: nil, precedence: precedenceNone},
+		TKTilde:            {prefix: compilePrefix, infix: nil, precedence: precedenceNone},
+		tokComma:           {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokColon:           {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokDot:             {prefix: nil, infix: compileSelector, precedence: precedencePosfix},
+		tokLParen:          {prefix: compileGroup, infix: compileCall, precedence: precedencePosfix},
+		tokRParen:          {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokLBracket:        {prefix: compileListOrMap, infix: compileSubscript, precedence: precedencePosfix},
+		tokRBracket:        {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokLCurly:          {prefix: compileRecord, infix: nil, precedence: precedenceNone},
+		tokRCurly:          {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokQuestion:        {prefix: nil, infix: compileNilChoice, precedence: precedenceNilChoice},
+		tokRArrow:          {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokStruct:          {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokPublic:          {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokExtension:       {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokDefer:           {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokAddAssign:       {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokSubAssign:       {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokMulAssign:       {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokDivAssign:       {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokRemAssign:       {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokPowAssign:       {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokBitAndAssign:    {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokBitOrAssign:     {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokBitXorAssign:    {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokBitLShiftAssign: {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokBitRShiftAssign: {prefix: nil, infix: nil, precedence: precedenceNone},
+		tokNotDefined:      {prefix: nil, infix: nil, precedence: precedenceNone},
 	}
 }

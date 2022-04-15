@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"runtime"
 
-	"github.com/vida-lang/vida-lang/vida"
+	"github.com/vida-lang/vida/vida"
 )
 
 // Cmd is a wrapper for Golang *exec.Cmd.

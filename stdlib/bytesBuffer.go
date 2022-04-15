@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/vida-lang/vida-lang/vida"
+	"github.com/vida-lang/vida/vida"
 )
 
 // BytesBuffer models a bytes buffer with operations to read and write aribitrary bytes.

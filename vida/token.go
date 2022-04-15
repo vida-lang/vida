@@ -4,37 +4,37 @@ import "fmt"
 
 // Numeric constants for the definition of the token types
 const (
-	TKEof byte = iota
-	TKComment
-	TKLet
-	TKConst
-	TKIf
-	TKElse
-	TKFor
-	TKIn
-	TKRange
-	TKBreak
-	TKContinue
-	TKSwitch
-	TKCase
-	TKDefault
-	TKLabel
-	TKFunction
-	TKReturn
-	TKIdentifier
-	TKEquation
-	TKInteger
-	TKUInt
-	TKBig
-	TKFloat
-	TKRational
-	TKComplex
-	TKTrue
-	TKFalse
-	TKNil
-	TKRune
-	TKString
-	TK3Dots
+	tokEOF byte = iota
+	tokComment
+	tokLet
+	tokConst
+	tokIf
+	tokElse
+	tokFor
+	tokIn
+	tokRange
+	tokBreak
+	tokContinue
+	tokSwitch
+	tokCase
+	tokDefault
+	tokLabel
+	tokFunction
+	tokReturn
+	tokIdentifier
+	tokEquation
+	tokInteger
+	tokUInt
+	tokBig
+	tokFloat
+	tokRational
+	tokComplex
+	tokTrue
+	tokFalse
+	tokNil
+	tokRune
+	tokString
+	tok3Dots
 	TKAdd
 	TKMinus
 	TKMul
@@ -47,8 +47,8 @@ const (
 	TKHat
 	TKLShift
 	TKRShift
-	TKEqual
-	TKNEqual
+	tokEqual
+	tokNEqual
 	TKGT
 	TKGE
 	TKLT
@@ -57,156 +57,156 @@ const (
 	TKOr
 	TKNot
 	TKTilde
-	TKComma
-	TKColon
-	TKDot
-	TKLParen
-	TKRParen
-	TKLBracket
-	TKRBracket
-	TKLCurly
-	TKRCurly
-	TKQuestion
-	TKRighArrow
-	TKStruct
-	TKPublic
-	TKExtension
-	TKDefer
-	TKAddAssign
-	TKSubAssign
-	TKMulAssign
-	TKDivAssign
-	TKRemAssign
-	TKPowAssign
-	TKBitAndAssign
-	TKBitOrAssign
-	TKBitXorAssign
-	TKBitLShiftAssign
-	TKBitRShiftAssign
-	TKUndefined
+	tokComma
+	tokColon
+	tokDot
+	tokLParen
+	tokRParen
+	tokLBracket
+	tokRBracket
+	tokLCurly
+	tokRCurly
+	tokQuestion
+	tokRArrow
+	tokStruct
+	tokPublic
+	tokExtension
+	tokDefer
+	tokAddAssign
+	tokSubAssign
+	tokMulAssign
+	tokDivAssign
+	tokRemAssign
+	tokPowAssign
+	tokBitAndAssign
+	tokBitOrAssign
+	tokBitXorAssign
+	tokBitLShiftAssign
+	tokBitRShiftAssign
+	tokNotDefined
 )
 
 // KindDescription is the string representation of a token type.
 var KindDescription = [...]string{
-	TKEof:             "EOF",
-	TKComment:         "Comment",
-	TKLet:             "Let",
-	TKConst:           "Const",
-	TKIf:              "If",
-	TKElse:            "Else",
-	TKFor:             "For",
-	TKIn:              "In",
-	TKRange:           "Range",
-	TKBreak:           "Break",
-	TKContinue:        "Continue",
-	TKSwitch:          "Switch",
-	TKCase:            "Case",
-	TKDefault:         "Default",
-	TKLabel:           "Label",
-	TKFunction:        "Function",
-	TKReturn:          "Return",
-	TKIdentifier:      "Identifier",
-	TKEquation:        "=",
-	TKInteger:         "Int",
-	TKUInt:            "UInt",
-	TKBig:             "Big",
-	TKFloat:           "Float",
-	TKRational:        "Rational",
-	TKComplex:         "Complex",
-	TKTrue:            "True",
-	TKFalse:           "False",
-	TKNil:             "Nil",
-	TKRune:            "Rune",
-	TKString:          "String",
-	TK3Dots:           "...",
-	TKAdd:             "+",
-	TKMinus:           "-",
-	TKMul:             "*",
-	TKDiv:             "/",
-	TKMod:             "mod",
-	TKPercent:         "%",
-	TKPower:           "**",
-	TKAmpersand:       "&",
-	TKBar:             "|",
-	TKHat:             "^",
-	TKLShift:          "<<",
-	TKRShift:          ">>",
-	TKEqual:           "==",
-	TKNEqual:          "!=",
-	TKGT:              ">",
-	TKGE:              ">=",
-	TKLT:              "<",
-	TKLE:              "<=",
-	TKAnd:             "and",
-	TKOr:              "or",
-	TKNot:             "not",
-	TKTilde:           "~",
-	TKComma:           ",",
-	TKColon:           ":",
-	TKDot:             ".",
-	TKLParen:          "(",
-	TKRParen:          ")",
-	TKLBracket:        "[",
-	TKRBracket:        "]",
-	TKLCurly:          "{",
-	TKRCurly:          "}",
-	TKQuestion:        "?",
-	TKRighArrow:       "->",
-	TKStruct:          "Struct",
-	TKPublic:          "Public",
-	TKExtension:       "Extension",
-	TKDefer:           "Defer",
-	TKAddAssign:       "+=",
-	TKSubAssign:       "-=",
-	TKMulAssign:       "*=",
-	TKDivAssign:       "/=",
-	TKRemAssign:       "%=",
-	TKPowAssign:       "**=",
-	TKBitAndAssign:    "&=",
-	TKBitOrAssign:     "|=",
-	TKBitXorAssign:    "^=",
-	TKBitLShiftAssign: "<<=",
-	TKBitRShiftAssign: ">>=",
-	TKUndefined:       "Undefined",
+	tokEOF:             "EOF",
+	tokComment:         "Comment",
+	tokLet:             "Let",
+	tokConst:           "Const",
+	tokIf:              "If",
+	tokElse:            "Else",
+	tokFor:             "For",
+	tokIn:              "In",
+	tokRange:           "Range",
+	tokBreak:           "Break",
+	tokContinue:        "Continue",
+	tokSwitch:          "Switch",
+	tokCase:            "Case",
+	tokDefault:         "Default",
+	tokLabel:           "Label",
+	tokFunction:        "Function",
+	tokReturn:          "Return",
+	tokIdentifier:      "Identifier",
+	tokEquation:        "=",
+	tokInteger:         "Int",
+	tokUInt:            "UInt",
+	tokBig:             "Big",
+	tokFloat:           "Float",
+	tokRational:        "Rational",
+	tokComplex:         "Complex",
+	tokTrue:            "True",
+	tokFalse:           "False",
+	tokNil:             "Nil",
+	tokRune:            "Rune",
+	tokString:          "String",
+	tok3Dots:           "...",
+	TKAdd:              "+",
+	TKMinus:            "-",
+	TKMul:              "*",
+	TKDiv:              "/",
+	TKMod:              "mod",
+	TKPercent:          "%",
+	TKPower:            "**",
+	TKAmpersand:        "&",
+	TKBar:              "|",
+	TKHat:              "^",
+	TKLShift:           "<<",
+	TKRShift:           ">>",
+	tokEqual:           "==",
+	tokNEqual:          "!=",
+	TKGT:               ">",
+	TKGE:               ">=",
+	TKLT:               "<",
+	TKLE:               "<=",
+	TKAnd:              "and",
+	TKOr:               "or",
+	TKNot:              "not",
+	TKTilde:            "~",
+	tokComma:           ",",
+	tokColon:           ":",
+	tokDot:             ".",
+	tokLParen:          "(",
+	tokRParen:          ")",
+	tokLBracket:        "[",
+	tokRBracket:        "]",
+	tokLCurly:          "{",
+	tokRCurly:          "}",
+	tokQuestion:        "?",
+	tokRArrow:          "->",
+	tokStruct:          "Struct",
+	tokPublic:          "Public",
+	tokExtension:       "Extension",
+	tokDefer:           "Defer",
+	tokAddAssign:       "+=",
+	tokSubAssign:       "-=",
+	tokMulAssign:       "*=",
+	tokDivAssign:       "/=",
+	tokRemAssign:       "%=",
+	tokPowAssign:       "**=",
+	tokBitAndAssign:    "&=",
+	tokBitOrAssign:     "|=",
+	tokBitXorAssign:    "^=",
+	tokBitLShiftAssign: "<<=",
+	tokBitRShiftAssign: ">>=",
+	tokNotDefined:      "NotDefined",
 }
 
-// Keywords is a map between strings -> Kind.
-var Keywords = map[string]byte{
+// keywords is a map between strings -> Kind.
+var keywords = map[string]byte{
 	"and":       TKAnd,
-	"break":     TKBreak,
-	"case":      TKCase,
-	"const":     TKConst,
-	"continue":  TKContinue,
-	"default":   TKDefault,
-	"defer":     TKDefer,
-	"else":      TKElse,
-	"extension": TKExtension,
-	"false":     TKFalse,
-	"for":       TKFor,
-	"fun":       TKFunction,
-	"if":        TKIf,
-	"in":        TKIn,
-	"let":       TKLet,
+	"break":     tokBreak,
+	"case":      tokCase,
+	"const":     tokConst,
+	"continue":  tokContinue,
+	"default":   tokDefault,
+	"defer":     tokDefer,
+	"else":      tokElse,
+	"extension": tokExtension,
+	"false":     tokFalse,
+	"for":       tokFor,
+	"fun":       tokFunction,
+	"if":        tokIf,
+	"in":        tokIn,
+	"let":       tokLet,
 	"mod":       TKMod,
-	"nil":       TKNil,
+	"nil":       tokNil,
 	"not":       TKNot,
 	"or":        TKOr,
-	"pub":       TKPublic,
-	"range":     TKRange,
-	"return":    TKReturn,
-	"struct":    TKStruct,
-	"switch":    TKSwitch,
-	"true":      TKTrue,
+	"pub":       tokPublic,
+	"range":     tokRange,
+	"return":    tokReturn,
+	"struct":    tokStruct,
+	"switch":    tokSwitch,
+	"true":      tokTrue,
 }
 
-// Token represents the lexical unit of the language.
-type Token struct {
+// token represents the lexical unit of the language.
+type token struct {
 	Type        byte
 	Description string
 	Line        UInt32
 }
 
 // String representation of a Token.
-func (tok *Token) String() string {
+func (tok token) String() string {
 	return fmt.Sprintf("   %3v  -  %v %v", tok.Line, KindDescription[tok.Type], tok.Description)
 }

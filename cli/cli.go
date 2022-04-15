@@ -1,14 +1,15 @@
 package cli
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/vida-lang/vida-lang/stdlib"
-	"github.com/vida-lang/vida-lang/vida"
+	"github.com/vida-lang/vida/stdlib"
+	"github.com/vida-lang/vida/vida"
 )
 
 func Vida() {
@@ -19,21 +20,21 @@ func Vida() {
 		printHelp()
 	default:
 		switch argv[1] {
-		case CIr, CIrSimple:
+		case CIr, CIrShort:
 			showBytecode(argc, argv)
-		case CRun, CRunSimple:
+		case CRun, CRunShort:
 			runRunModule(argc, argv)
-		case CDebug, CDebugSimple:
+		case CDebug, CDebugShort:
 			debugModule(argc, argv)
-		case CVer, CVerSimple:
+		case CVer, CVerShort:
 			printVersion()
-		case CHelp, CHelpSimple:
+		case CHelp, CHelpShort:
 			printHelp()
 		case CRepl:
 			printNotImplementedYet("REPL")
-		case CTime, CTimeSimple:
+		case CTime, CTimeShort:
 			timeModule(argc, argv)
-		case CAbout, CAboutSimple:
+		case CAbout, CAboutShort:
 			printAbout()
 		default:
 			runModule(argc, argv)
@@ -43,21 +44,21 @@ func Vida() {
 
 // CLI Options.
 const (
-	CIr          = "ir"
-	CIrSimple    = "i"
-	CRun         = "run"
-	CRunSimple   = "r"
-	CDebug       = "debug"
-	CDebugSimple = "d"
-	CVer         = "version"
-	CVerSimple   = "v"
-	CHelp        = "help"
-	CHelpSimple  = "h"
-	CRepl        = "repl"
-	CTime        = "time"
-	CTimeSimple  = "t"
-	CAbout       = "about"
-	CAboutSimple = "a"
+	CIr         = "ir"
+	CIrShort    = "i"
+	CRun        = "run"
+	CRunShort   = "r"
+	CDebug      = "debug"
+	CDebugShort = "d"
+	CVer        = "version"
+	CVerShort   = "v"
+	CHelp       = "help"
+	CHelpShort  = "h"
+	CRepl       = "repl"
+	CTime       = "time"
+	CTimeShort  = "t"
+	CAbout      = "about"
+	CAboutShort = "a"
 )
 
 // clearScreen is an auxiliary function that clears the screen.
@@ -68,7 +69,7 @@ func clearScreen() {
 
 func printVersion() {
 	clearScreen()
-	fmt.Printf("\n\n   %v\n   %v\n\n   Language Version %v\n   STDLib   Version %v\n   VMEngine Version %v\n\n\n", vida.LangName, vida.LangHeader, vida.LanguageVersion, vida.STDLibVersion, vida.VMEngineVersion)
+	fmt.Printf("\n\n   %v\n   %v\n\n   Language Version %v\n   STDLib   Version %v\n   VMEngine Version %v\n\n\n", vida.LangName, vida.LangHeader, vida.LangVersion, vida.STDLibVersion, vida.VMEngineVersion)
 }
 
 func printAbout() {
@@ -212,4 +213,75 @@ func timeModule(argc int, argv []string) {
 			os.Exit(0)
 		}
 	}
+}
+
+func runRepl() {
+	prompt, userPrompt, defaultPrompt := "", "", "❯"
+	prompt = defaultPrompt
+	var code string
+	scanner := bufio.NewScanner(os.Stdin)
+	repl, showCode := vida.NewRepl("repl", stdlib.Stdlib), false
+	clearScreen()
+	fmt.Printf("\n\n\n   Welcome to %v\n   Version %v\n   Type .help for assistance.\n\n\n", vida.LangName, vida.LangVersion)
+replLoop:
+	for {
+		fmt.Printf("%2v ", prompt)
+		if scanner.Scan() {
+			code = scanner.Text()
+			switch code {
+			case ".q", ".quit", ".exit":
+				break replLoop
+			case ".h", ".help":
+				replHelp()
+			case ".c", ".clear":
+				clearScreen()
+				println()
+			case ".s", ".show":
+				if showCode {
+					showCode = false
+					fmt.Printf("\n   Show code is off\n\n")
+				} else {
+					showCode = true
+					fmt.Printf("\n   Show code is on\n\n")
+				}
+			case ".dp", ".defaultPrompt":
+				prompt = defaultPrompt
+				println()
+			case ".sp", ".setPrompt":
+				fmt.Print("   Enter the new prompt : ")
+				if scanner.Scan() {
+					userPrompt = scanner.Text()
+					prompt = userPrompt
+					println()
+				} else {
+					break replLoop
+				}
+			default:
+				println()
+				if err := repl.Eval(code, showCode); err != nil {
+					fmt.Printf("\n\n   Error\n   %v\n\n   Code\n   %v\n\n\n", err, code)
+				} else {
+					println()
+				}
+			}
+		} else {
+			break replLoop
+		}
+	}
+	fmt.Printf("\n\n   Leaving REPL.\n\n\n")
+}
+
+func replHelp() {
+	clearScreen()
+	fmt.Printf("\n\n\n   Vida REPL Help 🌻\n\n")
+	fmt.Printf("   Type .command [args]?\n\n")
+	fmt.Println("   [h help] Shows this message")
+	fmt.Println("   [q quit exit] Quits the REPL")
+	fmt.Println("   [s show] Sets on printing readable machine code")
+	fmt.Println("   [e env] Shows the current context")
+	fmt.Println("   [sp setPrompt] Sets a new prompt")
+	fmt.Println("   [dp defaultPrompt] Sets prompt to its default value")
+	fmt.Println("   [it] Shows the last computed expression")
+	fmt.Println("   [c clear] Clears the terminal")
+	fmt.Printf("\n\n")
 }

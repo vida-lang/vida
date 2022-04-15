@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/vida-lang/vida-lang/vida"
+	"github.com/vida-lang/vida/vida"
 )
 
 // StringBuilder models an efficient way to build Strings.

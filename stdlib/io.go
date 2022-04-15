@@ -7,7 +7,7 @@ import (
 	"os"
 	"unsafe"
 
-	"github.com/vida-lang/vida-lang/vida"
+	"github.com/vida-lang/vida/vida"
 )
 
 // File models an open file descriptor.

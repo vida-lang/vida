@@ -244,7 +244,7 @@ func (function Function) Clone() Value {
 // Closure is the run time representation of a function with its own captured environment.
 type Closure struct {
 	Function *Function // The function this closure has.
-	FreeVars []FreeVar // The run time free variables linked to this closure.
+	FreeVars []Value   // The run time free variables linked to this closure.
 	StructID UInt      // In case the function can access private state, this is the run time structu id linked to.
 }
 
@@ -370,11 +370,6 @@ func (gf GFunction) GetMethod(name string) (Value, bool, error) {
 
 func (gf GFunction) Clone() Value {
 	return gf
-}
-
-// FreeVar models run time representation of free variables.
-type FreeVar struct {
-	Value Value
 }
 
 // Result models the result of computations that could fail.

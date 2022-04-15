@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"unsafe"
 
-	"github.com/vida-lang/vida-lang/vida"
+	"github.com/vida-lang/vida/vida"
 )
 
 type Regex struct {

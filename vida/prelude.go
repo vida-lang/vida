@@ -488,7 +488,7 @@ func gImportModule(args ...Value) (Value, error) {
 				}
 				if input, err := LoadModule(givenPath.Value); err == nil {
 					input.WriteRune(10)
-					module := BuildModule(input, givenPath.Value)
+					module := buildModule(input, givenPath.Value)
 					module.global = &globalState
 					globalState.modules[givenPath.Value] = module
 					//moduleFiber := &Fiber{stackFrame: make([]Frame, frameStackSize), stack: make([]Value, fiberStackSize)}
@@ -502,7 +502,7 @@ func gImportModule(args ...Value) (Value, error) {
 					globalState.currentFiber = moduleFiber
 					globalState.vm.Fiber = moduleFiber
 					//moduleFiber.frame.closure =
-					moduleFiber.loadAll()
+					moduleFiber.loadAllBuiltinFunctionality()
 					if err := globalState.vm.runInterpreter(moduleFiber.frame.closure.Function.Name); err != nil {
 						fiberPool.Put(moduleFiber)
 						return NilValue, err
@@ -550,7 +550,7 @@ func gImportRemoteModule(args ...Value) (Value, error) {
 							}
 							input := bytes.NewBuffer(content)
 							input.WriteRune(10)
-							module := BuildModule(input, givenPath.Value)
+							module := buildModule(input, givenPath.Value)
 							module.global = &globalState
 							globalState.modules[givenPath.Value] = module
 							//moduleFiber := &Fiber{stackFrame: make([]Frame, frameStackSize), stack: make([]Value, fiberStackSize)}
@@ -564,7 +564,7 @@ func gImportRemoteModule(args ...Value) (Value, error) {
 							globalState.currentFiber = moduleFiber
 							globalState.vm.Fiber = moduleFiber
 							//moduleFiber.frame.closure = Closure{Function: module.mainFunction.Function}
-							moduleFiber.loadAll()
+							moduleFiber.loadAllBuiltinFunctionality()
 							if err := globalState.vm.runInterpreter(moduleFiber.frame.closure.Function.Name); err != nil {
 								fiberPool.Put(moduleFiber)
 								return NilValue, err

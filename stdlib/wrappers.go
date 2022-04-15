@@ -3,7 +3,7 @@ package stdlib
 import (
 	"fmt"
 
-	"github.com/vida-lang/vida-lang/vida"
+	"github.com/vida-lang/vida/vida"
 )
 
 // GFunctionFromFloatToFloat wraps a Go function type func(float64)float64

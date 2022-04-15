@@ -10,8 +10,8 @@ import (
 	"unicode/utf8"
 )
 
-// Lexer a.k.a. lexical analyzer.
-type Lexer struct {
+// lexer a.k.a. lexical analyzer.
+type lexer struct {
 	fileName string
 	line     UInt32
 	rune     rune
@@ -21,8 +21,8 @@ type Lexer struct {
 }
 
 // newLexer creates a new Lexer.
-func newLexer(input *bytes.Buffer, fileName string) *Lexer {
-	lexer := &Lexer{
+func newLexer(input *bytes.Buffer, fileName string) *lexer {
+	lexer := &lexer{
 		fileName: fileName,
 		line:     1,
 		input:    input}
@@ -30,8 +30,8 @@ func newLexer(input *bytes.Buffer, fileName string) *Lexer {
 	return lexer
 }
 
-// nextToken performs lexical analysis on demand and returns the next token available or a boolean false when fails.
-func (lexer *Lexer) nextToken() Token {
+// nexttoken performs lexical analysis on demand and returns the next token available or a boolean false when fails.
+func (lexer *lexer) nextToken() token {
 init:
 	for unicode.IsSpace(lexer.rune) {
 		if lexer.rune == '\n' {
@@ -47,10 +47,10 @@ init:
 		}
 		result := lexer.builder.String()
 		lexer.builder.Reset()
-		if kind, isKeyword := Keywords[result]; isKeyword {
-			return Token{Type: kind, Line: lexer.line}
+		if kind, isKeyword := keywords[result]; isKeyword {
+			return token{Type: kind, Line: lexer.line}
 		}
-		return Token{Type: TKIdentifier, Line: lexer.line, Description: result}
+		return token{Type: tokIdentifier, Line: lexer.line, Description: result}
 	}
 
 	if unicode.IsDigit(lexer.rune) {
@@ -58,21 +58,22 @@ init:
 	}
 
 	symbol := lexer.scanSymbol()
-	if symbol.Type != TKComment {
+
+	if symbol.Type != tokComment {
 		return symbol
 	}
 	goto init
 }
 
 // Lexical analysis of comments.
-func (lexer *Lexer) scanComment() {
+func (lexer *lexer) scanComment() {
 	for lexer.rune != '\n' {
 		lexer.forward()
 	}
 }
 
 // Lexical analysis for multiline comments.
-func (lexer *Lexer) scanMultilineComment(line UInt32) {
+func (lexer *lexer) scanMultilineComment(line UInt32) {
 again:
 	for lexer.rune != '*' && lexer.rune != 0 {
 		if lexer.rune == '\n' {
@@ -90,7 +91,7 @@ again:
 }
 
 // Moves the lexer one token at a time.
-func (lexer *Lexer) forward() {
+func (lexer *lexer) forward() {
 	lexer.rune, _, lexer.err = lexer.input.ReadRune()
 	if lexer.err != nil {
 		lexer.rune = 0
@@ -98,7 +99,7 @@ func (lexer *Lexer) forward() {
 }
 
 // Unreads the last rune read.
-func (lexer *Lexer) backward(backup rune) {
+func (lexer *lexer) backward(backup rune) {
 	lexer.input.UnreadRune()
 	lexer.rune = backup
 }
@@ -134,52 +135,52 @@ func unterminatedCommentError(script string, line UInt32, initLine UInt32) {
 }
 
 // Lexical analysis for symbols.
-func (lexer *Lexer) scanSymbol() Token {
+func (lexer *lexer) scanSymbol() token {
 	switch lexer.rune {
 	case '{':
 		lexer.forward()
-		return Token{Type: TKLCurly, Line: lexer.line}
+		return token{Type: tokLCurly, Line: lexer.line}
 	case '}':
 		lexer.forward()
-		return Token{Type: TKRCurly, Line: lexer.line}
+		return token{Type: tokRCurly, Line: lexer.line}
 	case ',':
 		lexer.forward()
-		return Token{Type: TKComma, Line: lexer.line}
+		return token{Type: tokComma, Line: lexer.line}
 	case '=':
 		lexer.forward()
 		if lexer.rune == '=' {
 			lexer.forward()
-			return Token{Type: TKEqual, Line: lexer.line}
+			return token{Type: tokEqual, Line: lexer.line}
 		}
-		return Token{Type: TKEquation, Line: lexer.line}
+		return token{Type: tokEquation, Line: lexer.line}
 	case '(':
 		lexer.forward()
-		return Token{Type: TKLParen, Line: lexer.line}
+		return token{Type: tokLParen, Line: lexer.line}
 	case ')':
 		lexer.forward()
-		return Token{Type: TKRParen, Line: lexer.line}
+		return token{Type: tokRParen, Line: lexer.line}
 	case '[':
 		lexer.forward()
-		return Token{Type: TKLBracket, Line: lexer.line}
+		return token{Type: tokLBracket, Line: lexer.line}
 	case ']':
 		lexer.forward()
-		return Token{Type: TKRBracket, Line: lexer.line}
+		return token{Type: tokRBracket, Line: lexer.line}
 	case '.':
 		lexer.forward()
 		if lexer.rune == '.' {
 			lexer.forward()
 			if lexer.rune == '.' {
 				lexer.forward()
-				return Token{Type: TK3Dots, Line: lexer.line}
+				return token{Type: tok3Dots, Line: lexer.line}
 			}
-			return Token{Type: TKUndefined, Line: lexer.line}
+			return token{Type: tokNotDefined, Line: lexer.line}
 		}
-		return Token{Type: TKDot, Line: lexer.line}
+		return token{Type: tokDot, Line: lexer.line}
 	case '"':
 		lexer.forward()
 		if lexer.rune == '"' {
 			lexer.forward()
-			return Token{Type: TKString, Line: lexer.line}
+			return token{Type: tokString, Line: lexer.line}
 		}
 		initialLine := lexer.line
 	str:
@@ -273,7 +274,7 @@ func (lexer *Lexer) scanSymbol() Token {
 		if lexer.rune == 0 {
 			unterminatedStringError(lexer.fileName, lexer.line, initialLine)
 		}
-		strtok := Token{Type: TKString, Line: lexer.line, Description: lexer.builder.String()}
+		strtok := token{Type: tokString, Line: lexer.line, Description: lexer.builder.String()}
 		lexer.builder.Reset()
 		lexer.forward()
 		return strtok
@@ -281,55 +282,55 @@ func (lexer *Lexer) scanSymbol() Token {
 		lexer.forward()
 		if lexer.rune == '=' {
 			lexer.forward()
-			return Token{Type: TKAddAssign, Line: lexer.line}
+			return token{Type: tokAddAssign, Line: lexer.line}
 		} else if unicode.IsDigit(lexer.rune) {
 			lexer.builder.WriteRune('+')
 			return lexer.scanNumber()
 		}
-		return Token{Type: TKAdd, Line: lexer.line}
+		return token{Type: TKAdd, Line: lexer.line}
 	case '-':
 		lexer.forward()
 		if lexer.rune == '=' {
 			lexer.forward()
-			return Token{Type: TKSubAssign, Line: lexer.line}
+			return token{Type: tokSubAssign, Line: lexer.line}
 		} else if lexer.rune == '>' {
 			lexer.forward()
-			return Token{Type: TKRighArrow, Line: lexer.line}
+			return token{Type: tokRArrow, Line: lexer.line}
 		} else if unicode.IsDigit(lexer.rune) {
 			lexer.builder.WriteRune('-')
 			return lexer.scanNumber()
 		}
-		return Token{Type: TKMinus, Line: lexer.line}
+		return token{Type: TKMinus, Line: lexer.line}
 	case '*':
 		lexer.forward()
 		if lexer.rune == '=' {
 			lexer.forward()
-			return Token{Type: TKMulAssign, Line: lexer.line}
+			return token{Type: tokMulAssign, Line: lexer.line}
 		} else if lexer.rune == '*' {
 			lexer.forward()
 			if lexer.rune == '=' {
 				lexer.forward()
-				return Token{Type: TKPowAssign, Line: lexer.line}
+				return token{Type: tokPowAssign, Line: lexer.line}
 			}
-			return Token{Type: TKPower, Line: lexer.line}
+			return token{Type: TKPower, Line: lexer.line}
 		}
-		return Token{Type: TKMul, Line: lexer.line}
+		return token{Type: TKMul, Line: lexer.line}
 	case '/':
 		lexer.forward()
 		if lexer.rune == '/' {
 			lexer.forward()
 			lexer.scanComment()
-			return Token{Type: TKComment, Line: lexer.line}
+			return token{Type: tokComment, Line: lexer.line}
 		} else if lexer.rune == '*' {
 			lineBackup := lexer.line
 			lexer.forward()
 			lexer.scanMultilineComment(lineBackup)
-			return Token{Type: TKComment, Line: lineBackup}
+			return token{Type: tokComment, Line: lineBackup}
 		} else if lexer.rune == '=' {
 			lexer.forward()
-			return Token{Type: TKDivAssign, Line: lexer.line}
+			return token{Type: tokDivAssign, Line: lexer.line}
 		}
-		return Token{Type: TKDiv, Line: lexer.line}
+		return token{Type: TKDiv, Line: lexer.line}
 	case '#':
 		lexer.builder.WriteRune(lexer.rune)
 		lexer.forward()
@@ -340,81 +341,81 @@ func (lexer *Lexer) scanSymbol() Token {
 			}
 			result := lexer.builder.String()
 			lexer.builder.Reset()
-			return Token{Type: TKLabel, Line: lexer.line, Description: result}
+			return token{Type: tokLabel, Line: lexer.line, Description: result}
 		}
-		return Token{Type: TKUndefined, Description: string('#'), Line: lexer.line}
+		return token{Type: tokNotDefined, Description: string('#'), Line: lexer.line}
 	case '!':
 		lexer.forward()
 		if lexer.rune == '=' {
 			lexer.forward()
-			return Token{Type: TKNEqual, Line: lexer.line}
+			return token{Type: tokNEqual, Line: lexer.line}
 		}
-		return Token{Type: TKUndefined, Description: string('!'), Line: lexer.line}
+		return token{Type: tokNotDefined, Description: string('!'), Line: lexer.line}
 	case '<':
 		lexer.forward()
 		if lexer.rune == '<' {
 			lexer.forward()
 			if lexer.rune == '=' {
 				lexer.forward()
-				return Token{Type: TKBitLShiftAssign, Line: lexer.line}
+				return token{Type: tokBitLShiftAssign, Line: lexer.line}
 			}
-			return Token{Type: TKLShift, Line: lexer.line}
+			return token{Type: TKLShift, Line: lexer.line}
 		} else if lexer.rune == '=' {
 			lexer.forward()
-			return Token{Type: TKLE, Line: lexer.line}
+			return token{Type: TKLE, Line: lexer.line}
 		}
-		return Token{Type: TKLT, Line: lexer.line}
+		return token{Type: TKLT, Line: lexer.line}
 	case '>':
 		lexer.forward()
 		if lexer.rune == '>' {
 			lexer.forward()
 			if lexer.rune == '=' {
 				lexer.forward()
-				return Token{Type: TKBitRShiftAssign, Line: lexer.line}
+				return token{Type: tokBitRShiftAssign, Line: lexer.line}
 			}
-			return Token{Type: TKRShift, Line: lexer.line}
+			return token{Type: TKRShift, Line: lexer.line}
 		} else if lexer.rune == '=' {
 			lexer.forward()
-			return Token{Type: TKGE, Line: lexer.line}
+			return token{Type: TKGE, Line: lexer.line}
 		}
-		return Token{Type: TKGT, Line: lexer.line}
+		return token{Type: TKGT, Line: lexer.line}
 	case ':':
 		lexer.forward()
-		return Token{Type: TKColon, Line: lexer.line}
+		return token{Type: tokColon, Line: lexer.line}
 	case '?':
 		lexer.forward()
-		return Token{Type: TKQuestion, Line: lexer.line}
+		return token{Type: tokQuestion, Line: lexer.line}
 	case '~':
 		lexer.forward()
-		return Token{Type: TKTilde, Line: lexer.line}
+		return token{Type: TKTilde, Line: lexer.line}
 	case '&':
 		lexer.forward()
 		if lexer.rune == '=' {
 			lexer.forward()
-			return Token{Type: TKBitAndAssign, Line: lexer.line}
+			return token{Type: tokBitAndAssign, Line: lexer.line}
 		}
-		return Token{Type: TKAmpersand, Line: lexer.line}
+		return token{Type: TKAmpersand, Line: lexer.line}
 	case '|':
 		lexer.forward()
 		if lexer.rune == '=' {
 			lexer.forward()
-			return Token{Type: TKBitOrAssign, Line: lexer.line}
+			return token{Type: tokBitOrAssign, Line: lexer.line}
 		}
-		return Token{Type: TKBar, Line: lexer.line}
+		return token{Type: TKBar, Line: lexer.line}
 	case '^':
 		lexer.forward()
 		if lexer.rune == '=' {
 			lexer.forward()
-			return Token{Type: TKBitXorAssign, Line: lexer.line}
+			return token{Type: tokBitXorAssign, Line: lexer.line}
 		}
-		return Token{Type: TKHat, Line: lexer.line}
+		return token{Type: TKHat, Line: lexer.line}
 	case '%':
 		lexer.forward()
 		if lexer.rune == '=' {
 			lexer.forward()
-			return Token{Type: TKRemAssign, Line: lexer.line}
+			return token{Type: tokRemAssign, Line: lexer.line}
 		}
-		return Token{Type: TKPercent, Line: lexer.line}
+		return token{Type: TKPercent, Line: lexer.line}
 	case '\'':
 		initLine := lexer.line
 		lexer.forward()
@@ -489,7 +490,7 @@ func (lexer *Lexer) scanSymbol() Token {
 		if lexer.rune != '\'' {
 			illegalRuneError(lexer.fileName, lexer.line, initLine)
 		}
-		runetok := Token{Type: TKRune, Line: lexer.line, Description: lexer.builder.String()}
+		runetok := token{Type: tokRune, Line: lexer.line, Description: lexer.builder.String()}
 		lexer.builder.Reset()
 		lexer.forward()
 		return runetok
@@ -497,7 +498,7 @@ func (lexer *Lexer) scanSymbol() Token {
 		lexer.forward()
 		if lexer.rune == '`' {
 			lexer.forward()
-			return Token{Type: TKString, Line: lexer.line}
+			return token{Type: tokString, Line: lexer.line}
 		}
 		initialLine := lexer.line
 		for lexer.rune != '`' && lexer.rune != 0 {
@@ -510,37 +511,37 @@ func (lexer *Lexer) scanSymbol() Token {
 		if lexer.rune == 0 {
 			unterminatedStringError(lexer.fileName, lexer.line, initialLine)
 		}
-		strtok := Token{Type: TKString, Line: lexer.line, Description: lexer.builder.String()}
+		strtok := token{Type: tokString, Line: lexer.line, Description: lexer.builder.String()}
 		lexer.builder.Reset()
 		lexer.forward()
 		return strtok
 	case 0:
-		return Token{Type: TKEof, Line: lexer.line}
+		return token{Type: tokEOF, Line: lexer.line}
 	default:
-		return Token{Type: TKUndefined, Description: string(lexer.rune), Line: lexer.line}
+		return token{Type: tokNotDefined, Description: string(lexer.rune), Line: lexer.line}
 	}
 }
 
 // Lexical analysis for big or unsigned numbers suffix.
-func (lexer *Lexer) checkForBigOrUInt() Token {
+func (lexer *lexer) checkForBigOrUInt() token {
 	if lexer.rune == 'n' {
 		lexer.forward()
 		result := lexer.builder.String()
 		lexer.builder.Reset()
-		return Token{Type: TKBig, Description: result, Line: lexer.line}
+		return token{Type: tokBig, Description: result, Line: lexer.line}
 	} else if lexer.rune == 'u' {
 		lexer.forward()
 		result := lexer.builder.String()
 		lexer.builder.Reset()
-		return Token{Type: TKUInt, Description: result, Line: lexer.line}
+		return token{Type: tokUInt, Description: result, Line: lexer.line}
 	}
 	result := lexer.builder.String()
 	lexer.builder.Reset()
-	return Token{Type: TKInteger, Description: result, Line: lexer.line}
+	return token{Type: tokInteger, Description: result, Line: lexer.line}
 }
 
 // Lexical analysis for exponents.
-func (lexer *Lexer) scanExponent() Token {
+func (lexer *lexer) scanExponent() token {
 	lexer.forward()
 	if unicode.IsDigit(lexer.rune) {
 		for unicode.IsDigit(lexer.rune) {
@@ -553,7 +554,7 @@ func (lexer *Lexer) scanExponent() Token {
 		}
 		result := lexer.builder.String()
 		lexer.builder.Reset()
-		return Token{Type: TKFloat, Description: result, Line: lexer.line}
+		return token{Type: tokFloat, Description: result, Line: lexer.line}
 	} else if lexer.rune == '+' || lexer.rune == '-' {
 		lexer.builder.WriteRune(lexer.rune)
 		lexer.forward()
@@ -568,14 +569,14 @@ func (lexer *Lexer) scanExponent() Token {
 			}
 			result := lexer.builder.String()
 			lexer.builder.Reset()
-			return Token{Type: TKFloat, Description: result, Line: lexer.line}
+			return token{Type: tokFloat, Description: result, Line: lexer.line}
 		}
 	}
-	return Token{Type: TKUndefined, Description: lexer.builder.String(), Line: lexer.line}
+	return token{Type: tokNotDefined, Description: lexer.builder.String(), Line: lexer.line}
 }
 
 // Lexical analysis for complex exponets.
-func (lexer *Lexer) scanComplexExponent() Token {
+func (lexer *lexer) scanComplexExponent() token {
 	lexer.forward()
 	if unicode.IsDigit(lexer.rune) {
 		for unicode.IsDigit(lexer.rune) {
@@ -587,7 +588,7 @@ func (lexer *Lexer) scanComplexExponent() Token {
 			lexer.forward()
 			result := lexer.builder.String()
 			lexer.builder.Reset()
-			return Token{Type: TKComplex, Description: result, Line: lexer.line}
+			return token{Type: tokComplex, Description: result, Line: lexer.line}
 		}
 	} else if lexer.rune == '+' || lexer.rune == '-' {
 		lexer.builder.WriteRune(lexer.rune)
@@ -602,15 +603,15 @@ func (lexer *Lexer) scanComplexExponent() Token {
 				lexer.forward()
 				result := lexer.builder.String()
 				lexer.builder.Reset()
-				return Token{Type: TKComplex, Description: result, Line: lexer.line}
+				return token{Type: tokComplex, Description: result, Line: lexer.line}
 			}
 		}
 	}
-	return Token{Type: TKUndefined, Description: lexer.builder.String(), Line: lexer.line}
+	return token{Type: tokNotDefined, Description: lexer.builder.String(), Line: lexer.line}
 }
 
 // Lexical analysis for imaginary part of complex numbers.
-func (lexer *Lexer) scanImaginary() Token {
+func (lexer *lexer) scanImaginary() token {
 	lexer.forward()
 	if unicode.IsDigit(lexer.rune) {
 		for unicode.IsDigit(lexer.rune) {
@@ -623,7 +624,7 @@ func (lexer *Lexer) scanImaginary() Token {
 			lexer.forward()
 			result := lexer.builder.String()
 			lexer.builder.Reset()
-			return Token{Type: TKComplex, Description: result, Line: lexer.line}
+			return token{Type: tokComplex, Description: result, Line: lexer.line}
 		case '.':
 			lexer.builder.WriteRune(lexer.rune)
 			lexer.forward()
@@ -637,7 +638,7 @@ func (lexer *Lexer) scanImaginary() Token {
 					lexer.forward()
 					result := lexer.builder.String()
 					lexer.builder.Reset()
-					return Token{Type: TKComplex, Description: result, Line: lexer.line}
+					return token{Type: tokComplex, Description: result, Line: lexer.line}
 				}
 				if lexer.rune == 'e' || lexer.rune == 'E' {
 					lexer.builder.WriteRune(lexer.rune)
@@ -649,11 +650,11 @@ func (lexer *Lexer) scanImaginary() Token {
 			return lexer.scanComplexExponent()
 		}
 	}
-	return Token{Type: TKUndefined, Description: lexer.builder.String(), Line: lexer.line}
+	return token{Type: tokNotDefined, Description: lexer.builder.String(), Line: lexer.line}
 }
 
 // Lexical analysis for numbers,
-func (lexer *Lexer) scanFromDigit() Token {
+func (lexer *lexer) scanFromDigit() token {
 	for unicode.IsDigit(lexer.rune) || lexer.rune == '_' {
 		lexer.builder.WriteRune(lexer.rune)
 		lexer.forward()
@@ -663,23 +664,23 @@ func (lexer *Lexer) scanFromDigit() Token {
 		lexer.forward()
 		result := lexer.builder.String()
 		lexer.builder.Reset()
-		return Token{Type: TKBig, Description: result, Line: lexer.line}
+		return token{Type: tokBig, Description: result, Line: lexer.line}
 	case 'f':
 		lexer.forward()
 		result := lexer.builder.String()
 		lexer.builder.Reset()
-		return Token{Type: TKFloat, Description: result, Line: lexer.line}
+		return token{Type: tokFloat, Description: result, Line: lexer.line}
 	case 'i', 'j':
 		lexer.builder.WriteRune('i')
 		lexer.forward()
 		result := lexer.builder.String()
 		lexer.builder.Reset()
-		return Token{Type: TKComplex, Description: result, Line: lexer.line}
+		return token{Type: tokComplex, Description: result, Line: lexer.line}
 	case 'c':
 		lexer.forward()
 		result := lexer.builder.String()
 		lexer.builder.Reset()
-		return Token{Type: TKComplex, Description: result, Line: lexer.line}
+		return token{Type: tokComplex, Description: result, Line: lexer.line}
 	case '.':
 		backup := lexer.rune
 		lexer.forward()
@@ -687,7 +688,7 @@ func (lexer *Lexer) scanFromDigit() Token {
 			lexer.input.UnreadRune()
 			result := lexer.builder.String()
 			lexer.builder.Reset()
-			return Token{Type: TKInteger, Description: result, Line: lexer.line}
+			return token{Type: tokInteger, Description: result, Line: lexer.line}
 		}
 		if unicode.IsDigit(lexer.rune) {
 			lexer.builder.WriteRune(backup)
@@ -705,12 +706,12 @@ func (lexer *Lexer) scanFromDigit() Token {
 			}
 			result := lexer.builder.String()
 			lexer.builder.Reset()
-			return Token{Type: TKFloat, Description: result, Line: lexer.line}
+			return token{Type: tokFloat, Description: result, Line: lexer.line}
 		}
 		lexer.backward(backup)
 		result := lexer.builder.String()
 		lexer.builder.Reset()
-		return Token{Type: TKInteger, Description: result, Line: lexer.line}
+		return token{Type: tokInteger, Description: result, Line: lexer.line}
 	case 'e', 'E':
 		lexer.builder.WriteRune(lexer.rune)
 		return lexer.scanExponent()
@@ -724,9 +725,9 @@ func (lexer *Lexer) scanFromDigit() Token {
 			}
 			result := lexer.builder.String()
 			lexer.builder.Reset()
-			return Token{Type: TKRational, Description: result, Line: lexer.line}
+			return token{Type: tokRational, Description: result, Line: lexer.line}
 		}
-		return Token{Type: TKUndefined, Description: lexer.builder.String(), Line: lexer.line}
+		return token{Type: tokNotDefined, Description: lexer.builder.String(), Line: lexer.line}
 	case '+', '-':
 		lexer.builder.WriteRune(lexer.rune)
 		return lexer.scanImaginary()
@@ -734,17 +735,17 @@ func (lexer *Lexer) scanFromDigit() Token {
 		lexer.forward()
 		result := lexer.builder.String()
 		lexer.builder.Reset()
-		return Token{Type: TKUInt, Description: result, Line: lexer.line}
+		return token{Type: tokUInt, Description: result, Line: lexer.line}
 	default:
 		result := lexer.builder.String()
 		lexer.builder.Reset()
-		return Token{Type: TKInteger, Description: result, Line: lexer.line}
+		return token{Type: tokInteger, Description: result, Line: lexer.line}
 	}
 }
 
 // DFA for recognize five types of numbers.
 // Integer, Big, Double, Rational and Complex numbers.
-func (lexer *Lexer) scanNumber() Token {
+func (lexer *lexer) scanNumber() token {
 	if lexer.rune == '0' {
 		lexer.builder.WriteRune(lexer.rune)
 		lexer.forward()
@@ -761,7 +762,7 @@ func (lexer *Lexer) scanNumber() Token {
 			}
 			lexer.backward(backup)
 			lexer.builder.Reset()
-			return Token{Type: TKInteger, Description: "0", Line: lexer.line}
+			return token{Type: tokInteger, Description: "0", Line: lexer.line}
 		} else if lexer.rune == 'b' {
 			lexer.builder.WriteRune(lexer.rune)
 			lexer.forward()
@@ -774,7 +775,7 @@ func (lexer *Lexer) scanNumber() Token {
 			}
 			lexer.backward(backup)
 			lexer.builder.Reset()
-			return Token{Type: TKInteger, Description: "0", Line: lexer.line}
+			return token{Type: tokInteger, Description: "0", Line: lexer.line}
 		}
 	}
 	return lexer.scanFromDigit()

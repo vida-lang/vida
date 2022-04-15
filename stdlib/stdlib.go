@@ -1,6 +1,6 @@
 package stdlib
 
-import "github.com/vida-lang/vida-lang/vida"
+import "github.com/vida-lang/vida/vida"
 
 // Stdlib is the map mapping module names to LibLoaders.
 var Stdlib = map[string]vida.LibLoader{
