@@ -244,6 +244,7 @@ var StringInterface = Namespace{
 	"count":         GFunction{Name: "count", Value: stringCount},
 	"runes":         GFunction{Name: "runes", Value: stringGetRunes},
 	"bytes":         GFunction{Name: "runes", Value: stringGetBytes},
+	"format":        GFunction{Name: "format", Value: stringFormat},
 }
 
 // Checks if a collection is empty.
@@ -499,4 +500,12 @@ func stringCount(args ...Value) (Value, error) {
 		return nil, fmt.Errorf("the argument must be a value of tyoe String")
 	}
 	return nil, fmt.Errorf("expected %v argument and got %v", 1, len(args))
+}
+
+func stringFormat(args ...Value) (Value, error) {
+	if len(args) >= 1 {
+		str := args[0].(*String)
+		return &String{Value: VidaSprintf(str.Value, args[1:]...)}, nil
+	}
+	return nil, fmt.Errorf("expected %v arguments and got %v", 0, len(args))
 }

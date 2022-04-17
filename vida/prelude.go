@@ -26,9 +26,10 @@ func (fiber *Fiber) loadPrelude() {
 	fiber.module.namespace["argv"] = GFunction{Name: "args", Value: gArgs}
 	fiber.module.namespace["real"] = GFunction{Name: "real", Value: gGetReal}
 	fiber.module.namespace["imag"] = GFunction{Name: "imag", Value: gGetImag}
-	fiber.module.namespace["toSameTypeOf"] = GFunction{Name: "toSameTypeOf", Value: gToSameTypeOf}
+	fiber.module.namespace["toTypeof"] = GFunction{Name: "toTypeof", Value: gToSameTypeOf}
 	fiber.module.namespace["clone"] = GFunction{Name: "clone", Value: gClone}
 	fiber.module.namespace["assert"] = GFunction{Name: "assert", Value: gAssert}
+	fiber.module.namespace["format"] = GFunction{Name: "format", Value: gFormat}
 	// Data Type Constructors
 	fiber.module.namespace["Set"] = GFunction{Name: "Set", Value: gSetConstructor}
 	fiber.module.namespace["String"] = GFunction{Name: "String", Value: gToString}
@@ -301,7 +302,7 @@ func gToComplex(args ...Value) (Value, error) {
 		case UInt:
 			return Complex(complex(Float(value), 0)), nil
 		case Float:
-			return Complex(complex(Float(value), 0)), nil
+			return Complex(complex(value, 0)), nil
 		case Byte:
 			return Complex(complex(Float(value), 0)), nil
 		case *BInt:
@@ -318,13 +319,6 @@ func gToComplex(args ...Value) (Value, error) {
 			return nil, fmt.Errorf("not possible to convert Rational to Complex")
 		case Nil:
 			return Complex(complex(0, 0)), nil
-		case Bool:
-			if value {
-				return Complex(complex(1, 0)), nil
-			}
-			return Complex(complex(0, 0)), nil
-		case Rune:
-			return Complex(complex(Float(value), 0)), nil
 		case *String:
 			if value.Value == "i" || value.Value == "j" {
 				return Complex(complex(0, 1)), nil
@@ -334,8 +328,20 @@ func gToComplex(args ...Value) (Value, error) {
 			} else {
 				return nil, err
 			}
+		case Complex:
+			return value, nil
 		default:
 			return nil, fmt.Errorf("not possible to convert type '%v' to Complex", value.TypeName())
+		}
+	} else if len(args) == 2 {
+		if value1, ok := args[0].(Float); ok {
+			if value2, ok := args[1].(Float); ok {
+				return Complex(complex(value1, value2)), nil
+			} else {
+				return nil, fmt.Errorf("Complex function with 2 arguments receives values of type Float only and got '%v' as second arg", value2.TypeName())
+			}
+		} else {
+			return nil, fmt.Errorf("Complex function with 2 arguments receives values of type Float only and got '%v' as first arg", value1.TypeName())
 		}
 	}
 	return nil, fmt.Errorf("expected %v argument and got %v", 1, len(args))
@@ -908,7 +914,7 @@ func gAssert(args ...Value) (Value, error) {
 			return nil, ExpectedTypeAndGotOtherType(True.TypeName(), value.TypeName())
 		}
 	}
-	return nil, fmt.Errorf("expected %v at least argument and got %v", 1, len(args))
+	return nil, fmt.Errorf("expected at least %v argument and got %v", 1, len(args))
 }
 
 func gArgs(args ...Value) (Value, error) {
@@ -933,6 +939,16 @@ func gArgs(args ...Value) (Value, error) {
 		return NilValue, nil
 	}
 	return nil, fmt.Errorf("expected %v arguments and got %v", 0, len(args))
+}
+
+func gFormat(args ...Value) (Value, error) {
+	if len(args) >= 1 {
+		if fmtString, ok := args[0].(*String); ok {
+			return &String{Value: VidaSprintf(fmtString.Value, args[1:]...)}, nil
+		}
+		return nil, fmt.Errorf("expected a String as first argument and got %v", args[0].TypeName())
+	}
+	return nil, fmt.Errorf("expected at least %v argument and got %v", 1, len(args))
 }
 
 func gNotImplemented(args ...Value) (Value, error) {
