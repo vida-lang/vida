@@ -74,7 +74,7 @@ func printVersion() {
 
 func printAbout() {
 	clearScreen()
-	fmt.Printf("\n\n   %v\n   %v\n   %v\n\n\n", vida.LangName, vida.LangHeader, vida.LangWebSite)
+	fmt.Printf("\n\n   %v\n   Made with ❤️  and Go.\n   %v\n   %v\n   hello@vida-lang.org\n\n\n", vida.LangName, vida.LangHeader, vida.LangWebSite)
 }
 
 func printNotImplementedYet(functionality string) {

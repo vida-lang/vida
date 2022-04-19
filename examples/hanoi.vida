@@ -1,0 +1,34 @@
+//
+// Towers of Hanoi Puzzle.
+// hanoi.vida
+//
+
+
+// Represents a move of a disk from to
+fun move from to {
+    print("Move one disk from %v to %v".format(from, to))
+}
+
+
+// Recursive solution for the Puzzle.
+// numDisks must be a positive integer.
+// It moves a disk from to through out help.
+fun hanoi numDisks from help to {
+    if numDisks != 0 {
+        hanoi(numDisks - 1, from, to, help)
+        move(from, to)
+        hanoi(numDisks - 1, help, from, to)
+    }
+}
+
+
+let numDisks = 5
+print("\n\nTower of Hanoi procedure with %v disks:".format(numDisks))
+print("Where A, B, C are the sticks\n")
+print(" |    |    |")
+print(" |    |    |")
+print(" |    |    |")
+print("---  ---  ---")
+print(" A    B    C\n")
+hanoi(numDisks, "A", "B", "C")
+

@@ -1,6 +1,6 @@
 //
-// stack.vida
-// Mdoule stack
+// File: sstack.vida
+// Module: stack
 // Implemtation of the Stack ADT.
 // Implemtation of the Stack Iterator.
 //
@@ -8,10 +8,15 @@
 
 // StackIterator
 struct StackIterator {
+    // Private data
     index endIndex data
+    
+    // The iterator stores a reference to a List.
     fun new data {
         return StackIterator(index:0, endIndex:data.length(), data:data)
     }
+
+    // Each call to the iterator returns data from the List.
     fun __next self {
         if self.index < self.endIndex {
             let value = self.data[self.index]
@@ -25,34 +30,53 @@ struct StackIterator {
 
 // Stack
 struct Stack {
+    // Private List
     data
+
+    // Cretates a new stack from other stack.
     fun newFrom other {
         return Stack(data:other.data.clone())
     }
+
+    // Pushes a value at the top of the stack.
     fun push self value {
         self.data.append(value)
     }
+
+    // Pops a value from the stack.
+    // It returns a Result value.
     fun pop self {
         if self.data.isEmpty() {
             return Error("Pop from empty stack")
         }
         return Ok(self.data.popLast())
     }
+
+    // Returns the element at the top of the stack.
+    // It returns a Result value and a copy of the element when success.
     fun peek self {
         if self.data.isEmpty() {
             return Error("Peek from empty stack")
         }
-        return Ok(self.data[-1])
+        return Ok(clone(self.data[-1]))
     }
+
+    // Length
     fun length self {
         return self.data.length()
     }
+
+    // Check if the stack is empty.
     fun isEmpty self {
         return self.data.isEmpty()
     }
+
+    // Makes an iterator. This fullfil the iterator protocol.
     fun makeIterator self {
         return StackIterator.new(self.data.clone())
     }
+
+    // Prints self
     fun show self {
         print("Stack ", self.data)
     }

@@ -1,0 +1,48 @@
+//
+// mandelbrot.vida
+//
+
+
+// Sequence returns a generator that produces a number or the sequence based on the mandelbrot function.
+// c and z params must be Complex numbers.
+fun sequence c z {
+    return fun {
+        for {
+            let prev = z
+            z = z ** 2c + c
+            return prev
+        }
+    }
+}
+
+
+// Mandelbrot candidate.
+fun mandelbrot candidate {
+    return sequence(candidate, 0c)
+}
+
+// Julia candidate
+fun julia candidate parameter {
+    return sequence(candidate, parameter)
+}
+
+
+// Test whether the function converges.
+let juliaGenerator = julia(Complex(0.21), 0c)
+let mandelbrotGenerator = mandelbrot(Complex(0.22))
+let limit = 1000
+
+
+print("\nJulia Generator")
+for n in range limit {
+    print("Julia z( %v ) = %v".format(n, juliaGenerator()))
+}
+
+
+print("\nMandelbrot Generator")
+for n in range limit {
+    print("Mandelbrot z( %v ) = %v".format(n, mandelbrotGenerator()))
+}
+
+
+

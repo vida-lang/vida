@@ -1,0 +1,101 @@
+//
+// Module Queue
+// Implements a Queue ADT and its iterator
+//
+
+
+// Queue Iterator
+struct QueueIterator {
+    // Private data.
+    index endIndex data
+
+    // The iterator keeps a reference to a List.
+    fun new data {
+        return QueueIterator(index:0, endIndex:data.length(), data:data)
+    }
+
+    // Function to fullfil the iterator protocol.
+    fun __next self {
+        if self.index < self.endIndex {
+            let val = self.data[self.index]
+            self.index += 1
+            return val
+        }
+        return Iter.stop
+    }
+}
+
+
+// Queue
+struct Queue {
+    // Privata List.
+    data
+
+    // New Queue from other.
+    fun newFrom other {
+        return Queue(data:other.data.clone())
+    }
+
+    // Enqueues a value in the queue.
+    fun enqueue self value {
+        self.data.append(value)
+    }
+
+    // Dequeues a value from the Queue.
+    // It may fail, so it returns a Result value.
+    fun dequeue self {
+        if self.isEmpty() {
+            return Error("Dequeue from empty queue")
+        }
+        return Ok(self.data.popFirst())
+    }
+
+    // Shows the first data in the Queue.
+    // It may fail, so it returns a Result value.
+    fun peek self {
+        if self.isEmpty() {
+            return Error("Peek from empty queue")
+        }
+        return Ok(self.data[0])
+    }
+
+    // Clears the Queue.
+    fun clear self {
+        self.data.clear()
+    }
+
+    // Checks if the Queue is empty.
+    fun isEmpty self {
+        return self.data.isEmpty()
+    }
+
+    // Returns the length of the Queue.
+    fun length self {
+        return self.data.length()
+    }
+
+    // Fulfills the iterator protocol.
+    fun makeIterator self {
+        return QueueIterator.new(self.data.clone())
+    }
+
+    // Prints self.
+    fun show self {
+        print("Queue")
+        print("Data : ", self.data)
+    }
+}
+
+
+// Public API
+// Creates a new Queue.
+fun new {
+    return Queue(data:[])
+}
+
+
+// Creates a new Queue from other.
+fun newFrom other {
+    return Queue.newFrom(other)
+}
+
